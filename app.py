@@ -1,23 +1,20 @@
 """
-Jifra 🗼 - AI Smart Translator (Production Edition)
-=================================================
-Tech: Streamlit + Google GenAI SDK (v1)
-Features: Casual, Formal, SNS PRO, Auto-Discovery, High Contrast Dark Theme
+Jifra 🗼 - AI Smart Translator (Final Stable Edition)
+====================================================
+Tech: Streamlit + Google GenerativeAI (Legacy SDK)
+Stability: Model Auto-Discovery + API v1 Fixed
 """
 
 import streamlit as st
-from google import genai
+import google.generativeai as genai
 import re
 import time
 import random
 
 # =============================================================================
-# 1. 認証設定 (Streamlit Secrets / Environment Variables)
+# 1. 認証設定 (Streamlit Secrets)
 # =============================================================================
-# Streamlit CloudのSecrets設定欄には以下のキー名で保存してください:
-# gemini_api_key = "..."
-# pro_password = "..."
-
+# キー名は小文字で統一
 try:
     API_KEY = st.secrets["gemini_api_key"]
     PRO_PASSWORD = st.secrets["pro_password"]
@@ -35,321 +32,152 @@ st.set_page_config(
 )
 
 # =============================================================================
-# 3. カスタムデザインシステム (高級感のあるダークモード)
+# 3. カスタムデザイン (黒背景・高級感)
 # =============================================================================
 st.markdown("""
 <style>
-    /* 全体背景 */
     .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
         background-color: #0d1117 !important;
     }
-    .main .block-container {
-        padding-top: 2rem;
-        max-width: 700px;
-    }
-
-    /* テキストカラー */
-    .stApp p, .stApp span, .stApp label, .stApp div {
-        color: #f0f6fc !important;
-    }
-    h1, h2, h3, h4, h5, h6 {
-        color: #ffffff !important;
-    }
-
-    /* タイトルロゴ */
+    .main .block-container { padding-top: 2rem; max-width: 700px; }
+    .stApp p, .stApp span, .stApp label, .stApp div { color: #f0f6fc !important; }
+    h1, h2, h3, h4, h5, h6 { color: #ffffff !important; }
     .main-title {
-        text-align: center;
-        font-size: 3.5rem;
-        font-weight: 800;
+        text-align: center; font-size: 3.5rem; font-weight: 800;
         background: linear-gradient(90deg, #ff6b6b, #ff8e53);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
         margin-bottom: 0.2rem;
     }
-    .subtitle {
-        text-align: center;
-        color: #8b949e !important;
-        font-size: 1.1rem;
-        margin-bottom: 2.5rem;
-    }
-
-    /* セレクトボックス */
-    .stSelectbox > div > div {
-        background-color: #161b22 !important;
-        border: 1px solid #30363d !important;
-        color: #ffffff !important;
-    }
-
-    /* ボタン共通 */
-    div.stButton > button {
-        width: 100%;
-        border-radius: 10px !important;
-        font-weight: 600 !important;
-        border: none !important;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-        height: 3rem;
-    }
-    /* プライマリボタン (赤系グラデーション) */
-    div.stButton > button[kind="primary"] {
-        background: linear-gradient(135deg, #ff6b6b 0%, #ee5253 100%) !important;
-        color: white !important;
-        box-shadow: 0 4px 15px rgba(255, 107, 107, 0.3) !important;
-    }
-    div.stButton > button[kind="primary"]:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 20px rgba(255, 107, 107, 0.4) !important;
-    }
-    /* セカンダリボタン (ダークグレー) */
-    div.stButton > button[kind="secondary"] {
-        background-color: #21262d !important;
-        color: #c9d1d9 !important;
-        border: 1px solid #30363d !important;
-    }
-    div.stButton > button[kind="secondary"]:hover {
-        border-color: #ff6b6b !important;
-        color: white !important;
-    }
-
-    /* 入力エリア */
-    .stTextArea textarea {
-        background-color: #0d1117 !important;
-        border: 2px solid #30363d !important;
-        border-radius: 12px !important;
-        color: #ffffff !important;
-        font-size: 1.1rem !important;
-        padding: 1rem !important;
-    }
-    .stTextArea textarea:focus {
-        border-color: #ff6b6b !important;
-        box-shadow: 0 0 0 3px rgba(255, 107, 107, 0.2) !important;
-    }
-
-    /* 結果ボックス */
-    .result-card {
-        background-color: #161b22;
-        border: 1px solid #30363d;
-        border-left: 5px solid #ff6b6b;
-        border-radius: 12px;
-        padding: 1.5rem;
-        margin-top: 1rem;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-    }
-    .result-header {
-        color: #ff6b6b !important;
-        font-size: 0.85rem;
-        font-weight: 700;
-        margin-bottom: 0.6rem;
-        text-transform: uppercase;
-        letter-spacing: 0.1em;
-    }
-    .result-text {
-        color: #e6edf3 !important;
-        font-size: 1.2rem;
-        line-height: 1.7;
-        white-space: pre-wrap;
-    }
-    
-    /* リトライ通知 (Toast風) */
-    .status-toast {
-        position: fixed; bottom: 2rem; right: 2rem;
-        background-color: #161b22;
-        border: 1px solid #ff6b6b;
-        color: #ff6b6b;
-        padding: 0.8rem 1.2rem;
-        border-radius: 8px;
-        z-index: 9999;
-        font-weight: 600;
-        animation: slideIn 0.3s ease-out;
-    }
-    @keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
+    .subtitle { text-align: center; color: #8b949e !important; font-size: 1.1rem; margin-bottom: 2.5rem; }
+    .stSelectbox > div > div { background-color: #161b22 !important; border: 1px solid #30363d !important; color: #ffffff !important; }
+    div.stButton > button { width: 100%; border-radius: 10px !important; font-weight: 600 !important; border: none !important; height: 3rem; }
+    div.stButton > button[kind="primary"] { background: linear-gradient(135deg, #ff6b6b 0%, #ee5253 100%) !important; color: white !important; }
+    div.stButton > button[kind="secondary"] { background-color: #21262d !important; color: #c9d1d9 !important; border: 1px solid #30363d !important; }
+    .stTextArea textarea { background-color: #0d1117 !important; border: 2px solid #30363d !important; border-radius: 12px !important; color: #ffffff !important; font-size: 1.1rem !important; }
+    .result-card { background-color: #161b22; border: 1px solid #30363d; border-left: 5px solid #ff6b6b; border-radius: 12px; padding: 1.5rem; margin-top: 1rem; }
+    .result-header { color: #ff6b6b !important; font-size: 0.85rem; font-weight: 700; margin-bottom: 0.6rem; text-transform: uppercase; }
+    .result-text { color: #e6edf3 !important; font-size: 1.2rem; line-height: 1.7; white-space: pre-wrap; }
 </style>
 """, unsafe_allow_html=True)
 
 # =============================================================================
-# 4. API制御ロジック (New SDK: google-genai)
+# 4. モデル初期化 (Legacy SDK)
 # =============================================================================
 @st.cache_resource
-def get_client():
-    # エンドポイントの自動調整に任せるため http_options をシンプルに
-    return genai.Client(api_key=API_KEY)
-
-@st.cache_resource
-def get_active_model_id():
-    client = get_client()
+def init_stable_model():
     try:
-        # 利用可能なモデルをリストアップ
-        models = [m.name for m in client.models.list() if "generateContent" in m.supported_generation_methods]
+        genai.configure(api_key=API_KEY)
         
-        # 優先順位リスト
+        # 利用可能なモデルを取得
+        available = []
+        try:
+            for m in genai.list_models():
+                if 'generateContent' in m.supported_generation_methods:
+                    available.append(m.name)
+        except:
+            pass
+
+        # 最も安定しているモデル順
         priority = [
-            "gemini-1.5-flash",
-            "gemini-1.5-flash-latest",
-            "gemini-1.5-flash-8b",
-            "gemini-2.0-flash-exp",
-            "gemini-pro"
+            "models/gemini-1.5-flash",
+            "models/gemini-pro",
+            "models/gemini-1.0-pro"
         ]
         
+        target = None
         for p in priority:
-            if p in models or f"models/{p}" in models:
-                return p
+            if p in available:
+                target = p
+                break
         
-        return models[0] if models else "gemini-1.5-flash"
-    except:
-        return "gemini-1.5-flash"
+        if not target:
+            target = available[0] if available else "models/gemini-1.5-flash"
+            
+        return genai.GenerativeModel(target), target
+    except Exception as e:
+        return None, str(e)
 
-def call_gemini(prompt, status_box):
-    client = get_client()
-    model_id = get_active_model_id()
-    
+def call_api_with_retry(model, prompt, st_box):
     max_retries = 3
     for i in range(max_retries):
         try:
-            response = client.models.generate_content(
-                model=model_id,
-                contents=prompt
-            )
+            response = model.generate_content(prompt)
             return response.text, None
         except Exception as e:
             err = str(e)
-            # 404エラーが出た場合、別のモデルにフォールバックを試みる（簡易リトライ）
-            if "404" in err and i == 0:
-                model_id = "gemini-pro" # フォールバック
-                continue
-                
             if "429" in err or "ResourceExhausted" in err:
                 if i < max_retries - 1:
                     wait = (2 ** i) + random.random()
-                    status_box.markdown(f'<div class="status-toast">⏳ Traffic High. Retrying in {wait:.1f}s...</div>', unsafe_allow_html=True)
                     time.sleep(wait)
-                    status_box.empty()
                     continue
             return None, err
-    return None, "Connection Timeout"
+    return None, "Error"
 
 # =============================================================================
-# 5. 翻訳・SNS処理
+# 5. ロジック & UI
 # =============================================================================
 def simple_detect(text):
-    sample = text[:300]
-    if re.search(r'[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]', sample): return 'ja'
-    if re.search(r'[àâäéèêëïîôùûüçœæ]', sample): return 'fr'
-    if len(re.findall(r'\b(the|is|and|of|to|in|it|that)\b', sample, re.I)) >= 2: return 'en'
-    return 'ja'
+    if re.search(r'[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]', text): return 'ja'
+    if re.search(r'[àâäéèêëïîôùûüçœæ]', text): return 'fr'
+    return 'en'
 
-def run_translation(text, mode, style, status_box):
-    # 言語方向の判定
-    if mode == "auto":
-        det = simple_detect(text)
-        src, tgt = ('日本語', 'フランス語') if det == 'ja' else (('フランス語', '日本語') if det == 'fr' else ('英語', '日本語'))
-    else:
-        dirs = {"ja_fr": ('日本語', 'フランス語'), "fr_ja": ('フランス語', '日本語'), "ja_en": ('日本語', '英語'), "en_ja": ('英語', '日本語'), "en_fr": ('英語', 'フランス語'), "fr_en": ('フランス語', '英語')}
-        src, tgt = dirs.get(mode, ('日本語', 'フランス語'))
-
-    if style == "sns":
-        prompt = f"""
-あなたがSNSマーケティングのプロです。以下のテキストを元に、日・英・仏の3言語でSNS投稿を作成してください。
-【要件】
-- 絵文字(Emojis)を各言語3つ以上使う
-- ハッシュタグ(Hashtags)を各言語3つ以上つける
-- 各言語、本文とハッシュタグの間に必ず「空行（改行）」を1行入れてください。
-【入力】
-{text}
-【出力形式】
-🇯🇵 日本語:
-[本文]
-(空行)
-#タグ
-
-🇺🇸 English:
-...
-"""
-    else:
-        tone = "親しみやすいカジュアル" if style == 'casual' else "ビジネス向けのフォーマル"
-        prompt = f"""
-あなたはプロの翻訳者です。{src}から{tgt}へ「{tone}」な口調で翻訳してください。
-その後、翻訳結果から{src}への「戻し訳」も作成してください。
-【入力】
-{text}
-【出力形式】
-翻訳:
-...
-戻し訳:
-...
-"""
-    return call_gemini(prompt, status_box)
-
-# =============================================================================
-# 6. メインUI
-# =============================================================================
 def main():
     if 'style' not in st.session_state: st.session_state.style = 'casual'
+    
+    model, model_name = init_stable_model()
 
-    # --- サイドバー ---
     with st.sidebar:
         st.header("⚙️ Settings")
-        p_input = st.text_input("🔑 PRO Password", type="password", help="Enter JIFRA PRO Secret")
+        p_input = st.text_input("🔑 PRO Password", type="password")
         is_pro = (p_input == PRO_PASSWORD)
         if is_pro: st.success("✨ PRO Activated")
         st.divider()
-        st.caption(f"Powered by Gemini 1.5 Flash")
+        st.caption(f"Connected: {model_name}")
 
-    # --- ヘッダー ---
     st.markdown('<h1 class="main-title">Jifra 🗼</h1>', unsafe_allow_html=True)
     st.markdown('<p class="subtitle">Premium AI Smart Translator</p>', unsafe_allow_html=True)
 
-    # --- スタイル選択 ---
     c1, c2, c3 = st.columns(3)
-    def update_style(s): st.session_state.style = s
-    with c1: st.button("💬 Casual", on_click=update_style, args=('casual',), type="primary" if st.session_state.style=='casual' else "secondary", use_container_width=True)
-    with c2: st.button("👔 Formal", on_click=update_style, args=('formal',), type="primary" if st.session_state.style=='formal' else "secondary", use_container_width=True)
-    with c3: st.button("📱 SNS [PRO]", on_click=update_style, args=('sns',), type="primary" if st.session_state.style=='sns' else "secondary", use_container_width=True, disabled=not is_pro)
+    def set_s(s): st.session_state.style = s
+    with c1: st.button("💬 Casual", on_click=set_s, args=('casual',), type="primary" if st.session_state.style=='casual' else "secondary", use_container_width=True)
+    with c2: st.button("👔 Formal", on_click=set_s, args=('formal',), type="primary" if st.session_state.style=='formal' else "secondary", use_container_width=True)
+    with c3: st.button("📱 SNS [PRO]", on_click=set_s, args=('sns',), type="primary" if st.session_state.style=='sns' else "secondary", use_container_width=True, disabled=not is_pro)
 
     st.write("")
-
-    # --- 言語選択 ---
     opts = {"auto": "🔄 自動検知 / Auto Detect", "ja_fr": "🇯🇵 日 ➡ 🇫🇷 仏", "fr_ja": "🇫🇷 仏 ➡ 🇯🇵 日"}
     if is_pro: opts.update({"ja_en": "🇯🇵 日 ➡ 🇺🇸 英", "en_ja": "🇺🇸 英 ➡ 🇯🇵 日", "en_fr": "🇺🇸 英 ➡ 🇫🇷 仏", "fr_en": "🇫🇷 仏 ➡ 🇺🇸 英"})
+    sel_mode = st.selectbox("Dir", options=list(opts.keys()), format_func=lambda x: opts[x], label_visibility="collapsed")
     
-    sel_mode = st.selectbox("Direction", options=list(opts.keys()), format_func=lambda x: opts[x], label_visibility="collapsed")
-
-    # --- テキスト入力 ---
-    input_text = st.text_area("Input", height=180, placeholder="翻訳したいテキストを入力してください...", label_visibility="collapsed")
-    
+    input_text = st.text_area("Input", height=180, placeholder="テキストを入力...", label_visibility="collapsed")
     st_box = st.empty()
 
-    # --- 実行ボタン ---
     if st.button("翻訳する / Translate", type="primary", use_container_width=True):
-        if not input_text.strip():
-            st.warning("⚠️ テキストを入力してください。")
-            return
-        
-        # PRO権限チェック (Autoモード時の英語判定)
+        if not input_text.strip(): return
         if not is_pro and sel_mode == "auto" and simple_detect(input_text) == 'en':
-            st.error("🔒 英語の翻訳機能は PRO ユーザー限定です。")
+            st.error("🔒 PRO機能です。")
             return
 
-        with st.spinner("🚀 AI処理中..."):
-            res, err = run_translation(input_text, sel_mode, st.session_state.style, st_box)
+        with st.spinner("AI処理中..."):
+            # プロンプト生成 (スタイル別に分岐)
+            if st.session_state.style == "sns":
+                prompt = f"SNS投稿を日・英・仏で作れ。本文とハッシュタグの間に必ず空行を入れろ。入力：{input_text}"
+            else:
+                prompt = f"翻訳と戻し訳を作れ。入力：{input_text}"
+            
+            res, err = call_api_with_retry(model, prompt, st_box)
         
-        st_box.empty()
-
-        if err:
-            st.error(f"❌ エラーが発生しました: {err}")
+        if err: st.error(f"❌ {err}")
         else:
             if st.session_state.style == "sns":
                 st.markdown(f'<div class="result-card"><div class="result-header">🌍 SNS Collection</div><div class="result-text">{res}</div></div>', unsafe_allow_html=True)
             else:
-                # パース処理
-                trans, back = "", ""
-                parts = res.split("戻し訳:")
-                trans = parts[0].replace("翻訳:", "").strip()
-                if len(parts) > 1: back = parts[1].strip()
-                
-                if not trans: trans = res
-                
+                p = res.split("戻し訳:")
+                t = p[0].replace("翻訳:", "").strip()
+                if not t: t = res
+                b = p[1].strip() if len(p) > 1 else ""
                 sc1, sc2 = st.columns(2)
-                with sc1: st.markdown(f'<div class="result-card"><div class="result-header">📝 Translation</div><div class="result-text">{trans}</div></div>', unsafe_allow_html=True)
-                with sc2: st.markdown(f'<div class="result-card"><div class="result-header">🔄 Back Translation</div><div class="result-text">{back}</div></div>', unsafe_allow_html=True)
+                with sc1: st.markdown(f'<div class="result-card"><div class="result-header">📝 Translation</div><div class="result-text">{t}</div></div>', unsafe_allow_html=True)
+                with sc2: st.markdown(f'<div class="result-card"><div class="result-header">🔄 Back Translation</div><div class="result-text">{b}</div></div>', unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()

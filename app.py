@@ -170,13 +170,36 @@ st.markdown("""
 # =============================================================================
 @st.cache_resource
 def get_client():
-    # 接続を安定させるため api_version='v1' を明示
-    return genai.Client(api_key=API_KEY, http_options={'api_version': 'v1'})
+    # エンドポイントの自動調整に任せるため http_options をシンプルに
+    return genai.Client(api_key=API_KEY)
+
+@st.cache_resource
+def get_active_model_id():
+    client = get_client()
+    try:
+        # 利用可能なモデルをリストアップ
+        models = [m.name for m in client.models.list() if "generateContent" in m.supported_generation_methods]
+        
+        # 優先順位リスト
+        priority = [
+            "gemini-1.5-flash",
+            "gemini-1.5-flash-latest",
+            "gemini-1.5-flash-8b",
+            "gemini-2.0-flash-exp",
+            "gemini-pro"
+        ]
+        
+        for p in priority:
+            if p in models or f"models/{p}" in models:
+                return p
+        
+        return models[0] if models else "gemini-1.5-flash"
+    except:
+        return "gemini-1.5-flash"
 
 def call_gemini(prompt, status_box):
     client = get_client()
-    # モデル選択 (1.5-flashが最も高速で安定)
-    model_id = "gemini-1.5-flash"
+    model_id = get_active_model_id()
     
     max_retries = 3
     for i in range(max_retries):
@@ -188,6 +211,11 @@ def call_gemini(prompt, status_box):
             return response.text, None
         except Exception as e:
             err = str(e)
+            # 404エラーが出た場合、別のモデルにフォールバックを試みる（簡易リトライ）
+            if "404" in err and i == 0:
+                model_id = "gemini-pro" # フォールバック
+                continue
+                
             if "429" in err or "ResourceExhausted" in err:
                 if i < max_retries - 1:
                     wait = (2 ** i) + random.random()

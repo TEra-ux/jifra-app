@@ -40,6 +40,25 @@ st.markdown("""
         background-color: #0d1117 !important;
     }
     .main .block-container { padding-top: 2rem; max-width: 700px; }
+    
+    /* サイドバーの視認性改善 */
+    [data-testid="stSidebar"] {
+        background-color: #161b22 !important;
+        border-right: 1px solid #30363d;
+    }
+    [data-testid="stSidebar"] * {
+        color: #e6edf3 !important;
+    }
+    [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2 {
+        color: #ffffff !important;
+    }
+    /* サイドバー内のテキスト入力 */
+    [data-testid="stSidebar"] .stTextInput input {
+        background-color: #0d1117 !important;
+        color: #ffffff !important;
+        border: 1px solid #30363d !important;
+    }
+
     .stApp p, .stApp span, .stApp label, .stApp div { color: #f0f6fc !important; }
     h1, h2, h3, h4, h5, h6 { color: #ffffff !important; }
     .main-title {
@@ -54,9 +73,12 @@ st.markdown("""
     div.stButton > button[kind="primary"] { background: linear-gradient(135deg, #ff6b6b 0%, #ee5253 100%) !important; color: white !important; }
     div.stButton > button[kind="secondary"] { background-color: #21262d !important; color: #c9d1d9 !important; border: 1px solid #30363d !important; }
     .stTextArea textarea { background-color: #0d1117 !important; border: 2px solid #30363d !important; border-radius: 12px !important; color: #ffffff !important; font-size: 1.1rem !important; }
-    .result-card { background-color: #161b22; border: 1px solid #30363d; border-left: 5px solid #ff6b6b; border-radius: 12px; padding: 1.5rem; margin-top: 1rem; }
-    .result-header { color: #ff6b6b !important; font-size: 0.85rem; font-weight: 700; margin-bottom: 0.6rem; text-transform: uppercase; }
-    .result-text { color: #e6edf3 !important; font-size: 1.2rem; line-height: 1.7; white-space: pre-wrap; }
+    
+    /* 結果カード */
+    .result-card { background-color: #161b22; border: 1px solid #30363d; border-left: 5px solid #ff6b6b; border-radius: 12px; padding: 1.2rem; margin-top: 1rem; }
+    .result-header { color: #ff6b6b !important; font-size: 0.75rem; font-weight: 700; margin-bottom: 0.4rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    .result-text { color: #e6edf3 !important; font-size: 1.05rem; line-height: 1.5; white-space: pre-wrap; }
+    .pattern-label { color: #8b949e !important; font-size: 0.8rem; margin-top: 0.8rem; border-top: 1px solid #30363d; padding-top: 0.5rem; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -160,9 +182,47 @@ def main():
         with st.spinner("AI処理中..."):
             # プロンプト生成 (スタイル別に分岐)
             if st.session_state.style == "sns":
-                prompt = f"SNS投稿を日・英・仏で作れ。本文とハッシュタグの間に必ず空行を入れろ。入力：{input_text}"
+                prompt = f"""
+あなたはSNSマーケティングのプロです。以下のテキストを元に、日・英・仏の3言語でSNS投稿を作成してください。
+【要件】
+- 各言語、絵文字とハッシュタグを3つ以上入れる
+- 本文とハッシュタグの間に必ず空行を入れる
+- 説明は一切不要、以下のフォーマットのみ出力
+【出力形式】
+🇯🇵 日本語:
+[本文]
+(空行)
+#タグ
+
+🇺🇸 English:
+[Body]
+(空行)
+#Hashtags
+
+🇫🇷 Français:
+[Corps]
+(空行)
+#Hashtags
+【入力】
+{input_text}
+"""
             else:
-                prompt = f"翻訳と戻し訳を作れ。入力：{input_text}"
+                tone = "カジュアルで親しみやすい" if st.session_state.style == 'casual' else "ビジネス向けのフォーマルな"
+                prompt = f"""
+あなたはプロの翻訳家です。以下の入力を{sel_mode}に基づき、{tone}表現で翻訳してください。
+【要件】
+- ニュアンスの異なる翻訳パターンを2つ提示してください
+- 各パターンに対し、必ず元の言語への「戻し訳」を添えてください
+- 説明や余計な挨拶は一切含めず、以下のフォーマットのみで出力してください
+【出力形式】
+パターン1: [翻訳結果1]
+戻し訳1: [簡潔な戻し訳1]
+
+パターン2: [翻訳結果2]
+戻し訳2: [簡潔な戻し訳2]
+【入力】
+{input_text}
+"""
             
             res, err = call_api_with_retry(model, prompt, st_box)
         
@@ -171,13 +231,26 @@ def main():
             if st.session_state.style == "sns":
                 st.markdown(f'<div class="result-card"><div class="result-header">🌍 SNS Collection</div><div class="result-text">{res}</div></div>', unsafe_allow_html=True)
             else:
-                p = res.split("戻し訳:")
-                t = p[0].replace("翻訳:", "").strip()
-                if not t: t = res
-                b = p[1].strip() if len(p) > 1 else ""
-                sc1, sc2 = st.columns(2)
-                with sc1: st.markdown(f'<div class="result-card"><div class="result-header">📝 Translation</div><div class="result-text">{t}</div></div>', unsafe_allow_html=True)
-                with sc2: st.markdown(f'<div class="result-card"><div class="result-header">🔄 Back Translation</div><div class="result-text">{b}</div></div>', unsafe_allow_html=True)
+                # パース処理 (より柔軟に)
+                lines = res.strip().split('\n')
+                p1_t, p1_b, p2_t, p2_b = "", "", "", ""
+                curr = None
+                for line in lines:
+                    if "パターン1" in line: curr = "p1_t"; p1_t = line.split(":", 1)[-1].strip()
+                    elif "戻し訳1" in line: curr = "p1_b"; p1_b = line.split(":", 1)[-1].strip()
+                    elif "パターン2" in line: curr = "p2_t"; p2_t = line.split(":", 1)[-1].strip()
+                    elif "戻し訳2" in line: curr = "p2_b"; p2_b = line.split(":", 1)[-1].strip()
+                    elif curr == "p1_t" and line.strip(): p1_t += "\n" + line
+                    elif curr == "p1_b" and line.strip(): p1_b += "\n" + line
+                    elif curr == "p2_t" and line.strip(): p2_t += "\n" + line
+                    elif curr == "p2_b" and line.strip(): p2_b += "\n" + line
+
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    st.markdown(f'<div class="result-card"><div class="result-header">💡 Pattern 1</div><div class="result-text">{p1_t if p1_t else res}</div><div class="pattern-label">🔄 Back Translation</div><div class="result-text" style="font-size:0.9rem; color:#8b949e !important;">{p1_b}</div></div>', unsafe_allow_html=True)
+                with col_b:
+                    if p2_t:
+                        st.markdown(f'<div class="result-card"><div class="result-header">💡 Pattern 2</div><div class="result-text">{p2_t}</div><div class="pattern-label">🔄 Back Translation</div><div class="result-text" style="font-size:0.9rem; color:#8b949e !important;">{p2_b}</div></div>', unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()

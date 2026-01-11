@@ -296,13 +296,13 @@ def main():
     with c1: st.button("👕 Casual", on_click=set_s, args=('casual',), type="primary" if st.session_state.style=='casual' else "secondary", use_container_width=True)
     with c2: st.button("👔 Formal", on_click=set_s, args=('formal',), type="primary" if st.session_state.style=='formal' else "secondary", use_container_width=True)
     with c3: st.button("📱 SNS", on_click=set_s, args=('sns',), type="primary" if st.session_state.style=='sns' else "secondary", use_container_width=True, disabled=not is_pro)
-    with c4: st.button("🎨 Image", on_click=set_s, args=('prompt',), type="primary" if st.session_state.style=='prompt' else "secondary", use_container_width=True)
+    with c4: st.button("🎨 Prompt", on_click=set_s, args=('prompt',), type="primary" if st.session_state.style=='prompt' else "secondary", use_container_width=True)
 
     st.write("")
     
     # 画像生成プロンプトモード: 3段階システム
     if st.session_state.style == 'prompt':
-        st.markdown('<div class="visual-header">🎨 Visual Prompt Generator / 画像生成プロンプト</div>', unsafe_allow_html=True)
+        st.caption("🎨 Visual Prompt")
         
         p1, p2, p3 = st.columns(3)
         
@@ -310,16 +310,16 @@ def main():
         
         with p1:
             st.button("★", on_click=set_level, args=(1,), type="primary" if st.session_state.prompt_level==1 else "secondary", use_container_width=True)
-            st.markdown('<p class="star-label">Basic</p>', unsafe_allow_html=True)
-            st.markdown('<p class="star-desc">Direct translation<br>直訳</p>', unsafe_allow_html=True)
+            st.markdown('<p class="star-label">Literal</p>', unsafe_allow_html=True)
+            st.markdown('<p class="star-desc">言葉を忠実に<br>Simple English</p>', unsafe_allow_html=True)
         with p2:
             st.button("★★", on_click=set_level, args=(2,), type="primary" if st.session_state.prompt_level==2 else "secondary", use_container_width=True, disabled=not is_pro)
-            st.markdown('<p class="star-label">Advanced</p>', unsafe_allow_html=True)
-            st.markdown('<p class="star-desc">AI-optimized prompt<br>AI最適化プロンプト</p>', unsafe_allow_html=True)
+            st.markdown('<p class="star-label">Creative</p>', unsafe_allow_html=True)
+            st.markdown('<p class="star-desc">表現を豊かに<br>Rich Narrative</p>', unsafe_allow_html=True)
         with p3:
             st.button("★★★", on_click=set_level, args=(3,), type="primary" if st.session_state.prompt_level==3 else "secondary", use_container_width=True, disabled=not is_pro)
-            st.markdown('<p class="star-label">Professional</p>', unsafe_allow_html=True)
-            st.markdown('<p class="star-desc">Pro-level tags<br>プロ仕様タグ</p>', unsafe_allow_html=True)
+            st.markdown('<p class="star-label">Masterpiece</p>', unsafe_allow_html=True)
+            st.markdown('<p class="star-desc">写実を極める<br>Tech Specs</p>', unsafe_allow_html=True)
 
     # 入力欄
     input_text = st.text_area("", value=st.session_state.input_text, height=160, placeholder="Input text...", label_visibility="collapsed")
@@ -335,7 +335,13 @@ def main():
 
     col_run, col_clear = st.columns([5, 1])
     with col_run:
-        btn_label = "🎨 Generate" if st.session_state.style == 'prompt' else "✈️ Translate"
+        # 条件分岐: 翻訳系はTranslate、SNS/★★以上はCreate
+        if st.session_state.style in ['casual', 'formal']:
+            btn_label = "✈️ Translate"
+        elif st.session_state.style == 'prompt' and st.session_state.prompt_level == 1:
+            btn_label = "✈️ Translate"
+        else:
+            btn_label = "🎨 Create"
         run_btn = st.button(btn_label, type="primary", use_container_width=True)
     with col_clear:
         if st.button("🗑️", use_container_width=True):

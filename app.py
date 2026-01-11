@@ -223,24 +223,33 @@ def call_api(model, prompt):
 # 5. 履歴管理
 # =============================================================================
 def add_history(result, is_pro):
-    # 生成された文（最初の有効な翻訳結果）を抽出
     lines = result.strip().split('\n')
-    summary = ""
+    extracted_texts = []
+    
+    # テキスト抽出（ラベルや戻し訳を除外）
     for line in lines:
         line = line.strip()
-        # ラベルや戻し訳を除外し、翻訳テキスト自体を取得する
         if line and not line.startswith('(') and not line.startswith('[') and not line.endswith(':') and len(line) > 2:
-            summary = line
-            break
+            extracted_texts.append(line)
     
-    if not summary:
-        summary = result.split('\n')[0]
+    # 重複を除去しつつ、リストの逆順（生成順）で追加していく
+    # そうすることで、最新のものが一番上に来るようにinsert(0, ...)する
+    seen = set()
+    unique_texts = []
+    for t in extracted_texts:
+        if t not in seen:
+            unique_texts.append(t)
+            seen.add(t)
     
-    # 全文保存（表示時にst.codeを使うのでtruncatedしない方が良いが、サイドバーのスペース考慮）
-    # ユーザー要望「長押しでコピー」→ 全文が必要だが、長すぎると邪魔。
-    # ここでは「生成された文」そのものを保存する。
+    # 逆順にしてinsertすることで、結果的に元の順序と同じ並び（あるいは意図した順序）で履歴に残るように調整
+    # ここでは「リストの最後（＝最後のバリエーション）」を先にinsertし、
+    # その後に「リストの最初（＝最初のバリエーション）」をinsertすれば、履歴の一番上が「最初のバリエーション」になる
+    # Historyは insert(0) なので、後に入れたものが上に来る。
+    # つまり、リストの後ろから順に入れていけば、リストの先頭がHistoryの先頭になる。
     
-    st.session_state.history.insert(0, {"id": time.time(), "text": summary, "result": result, "pinned": False})
+    for text in reversed(unique_texts):
+        st.session_state.history.insert(0, {"id": time.time() + random.random(), "text": text, "result": result, "pinned": False})
+
     if not is_pro:
         st.session_state.history = st.session_state.history[:1]
     else:

@@ -1,266 +1,254 @@
 """
-Jifra 🗼 - The Definitive Edition
-================================
-Refined UI/UX with Flag-only Labels & One-click Copy
-Tech: Streamlit + Google GenerativeAI (Legacy SDK)
+Jifra 🗼 - AI Smart Translator & Prompt generator (Refactored Edition)
+=====================================================================
+Features: Translation, SNS mode, Prompt Generation (PRO)
+Systems: Session-based History, Pinning, Security Hardened
 """
 
 import streamlit as st
 import google.generativeai as genai
+import re
 import time
 import random
+from datetime import datetime
 
 # =============================================================================
-# 1. 認証 & ページ設定
+# 1. セキュリティ設定 (Streamlit Secrets)
 # =============================================================================
 try:
     API_KEY = st.secrets["GEMINI_API_KEY"]
     PRO_PASSWORD = st.secrets["PRO_PASSWORD"]
 except KeyError:
-    # 互換性フォールバック
-    API_KEY = st.secrets.get("gemini_api_key", "YOUR_DEFAULT_API_KEY")
-    PRO_PASSWORD = st.secrets.get("pro_password", "JIFRA2026")
-
-st.set_page_config(page_title="Jifra 🗼", page_icon="🗼", layout="centered")
-
-# Session State 初期化
-if 'input_text' not in st.session_state: st.session_state.input_text = ""
-if 'results' not in st.session_state: st.session_state.results = None
-if 'history' not in st.session_state: st.session_state.history = []
+    try:
+        API_KEY = st.secrets["gemini_api_key"]
+        PRO_PASSWORD = st.secrets["pro_password"]
+    except KeyError:
+        st.error("❌ Secretsに 'GEMINI_API_KEY' または 'PRO_PASSWORD' が設定されていません。")
+        st.stop()
 
 # =============================================================================
-# 2. カスタムデザイン (CSS)
+# 2. ページ基本設定 & Session State 初期化
+# =============================================================================
+st.set_page_config(
+    page_title="Jifra 🗼",
+    page_icon="🗼",
+    layout="centered"
+)
+
+if 'history' not in st.session_state:
+    st.session_state.history = []
+if 'style' not in st.session_state:
+    st.session_state.style = 'casual'
+
+# =============================================================================
+# 3. カスタムデザイン (CSS)
 # =============================================================================
 st.markdown("""
 <style>
-    /* ベースカラー */
     .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
         background-color: #0d1117 !important;
     }
-    .main .block-container { padding-top: 1.5rem; max-width: 700px; }
+    .main .block-container { padding-top: 2rem; max-width: 700px; }
     
-    /* フォント・テキスト */
-    .stApp p, .stApp span, .stApp label, .stApp div { color: #f0f6fc !important; }
-    h1, h2, h3, h4, h5, h6 { color: #ffffff !important; font-weight: 700 !important; }
+    [data-testid="stSidebar"] {
+        background-color: #161b22 !important;
+        border-right: 1px solid #30363d;
+    }
+    [data-testid="stSidebar"] * { color: #e6edf3 !important; }
+    [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2 { color: #ffffff !important; }
+    [data-testid="stSidebar"] .stTextInput input {
+        background-color: #0d1117 !important;
+        color: #ffffff !important;
+        border: 1px solid #30363d !important;
+    }
 
-    /* タイトル */
+    .stApp p, .stApp span, .stApp label, .stApp div { color: #f0f6fc !important; }
+    h1, h2, h3, h4, h5, h6 { color: #ffffff !important; }
     .main-title {
-        text-align: center; font-size: 3.2rem; font-weight: 800;
+        text-align: center; font-size: 3.5rem; font-weight: 800;
         background: linear-gradient(90deg, #ff6b6b, #ff8e53);
         -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-        margin-bottom: 2rem;
+        margin-bottom: 0.2rem;
     }
-
-    /* サイドバー */
-    [data-testid="stSidebar"] { background-color: #161b22 !important; border-right: 1px solid #30363d; }
-    [data-testid="stSidebar"] * { color: #e6edf3 !important; }
-
-    /* 入力エリア */
-    .stTextArea textarea {
-        background-color: #0d1117 !important;
-        border: 2px solid #30363d !important;
-        border-radius: 12px !important;
-        color: #ffffff !important;
-        font-size: 1.1rem !important;
-    }
-
-    /* ボタン */
-    div.stButton > button {
-        border-radius: 12px !important; font-weight: 600 !important;
-        transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
-    }
-    div.stButton > button[kind="primary"] {
-        background: linear-gradient(135deg, #ff6b6b 0%, #ee5253 100%) !important;
-        border: none !important; color: white !important;
-    }
-    div.stButton > button[kind="secondary"] {
-        background-color: #21262d !important; border: 1px solid #30363d !important;
-    }
-
-    /* タブ */
-    .stTabs [data-baseweb="tab-list"] { background-color: transparent !important; }
-    .stTabs [data-baseweb="tab"] {
-        font-weight: 600 !important; color: #8b949e !important;
-        background-color: transparent !important; border: none !important;
-    }
-    .stTabs [aria-selected="true"] { color: #ff6b6b !important; border-bottom: 2px solid #ff6b6b !important; }
-
-    /* コードブロック (コピー用) */
-    code { background-color: #161b22 !important; color: #e6edf3 !important; }
+    .subtitle { text-align: center; color: #8b949e !important; font-size: 1.1rem; margin-bottom: 2.5rem; }
     
-    /* 履歴 */
-    .history-card {
-        background-color: #0d1117; border: 1px solid #30363d;
-        border-radius: 8px; padding: 0.6rem; margin-bottom: 0.4rem; font-size: 0.85rem;
+    div.stButton > button { width: 100%; border-radius: 10px !important; font-weight: 600 !important; border: none !important; height: 3rem; transition: 0.2s; }
+    div.stButton > button[kind="primary"] { background: linear-gradient(135deg, #ff6b6b 0%, #ee5253 100%) !important; color: white !important; }
+    div.stButton > button[kind="secondary"] { background-color: #21262d !important; color: #c9d1d9 !important; border: 1px solid #30363d !important; }
+    
+    .stTextArea textarea { background-color: #0d1117 !important; border: 2px solid #30363d !important; border-radius: 12px !important; color: #ffffff !important; font-size: 1.1rem !important; }
+    .stSelectbox > div > div { background-color: #161b22 !important; border: 1px solid #30363d !important; color: #ffffff !important; }
+
+    .result-card { background-color: #161b22; border: 1px solid #30363d; border-left: 5px solid #ff6b6b; border-radius: 12px; padding: 1.2rem; margin-top: 1rem; }
+    .result-header { color: #ff6b6b !important; font-size: 0.75rem; font-weight: 700; margin-bottom: 0.4rem; text-transform: uppercase; }
+    .result-text { color: #e6edf3 !important; font-size: 1.05rem; line-height: 1.5; white-space: pre-wrap; }
+    .back-trans { color: #8b949e !important; font-size: 0.9rem; margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid #30363d; }
+    
+    .history-item { 
+        background-color: #0d1117; border: 1px solid #30363d; border-radius: 8px; 
+        padding: 0.8rem; margin-bottom: 0.5rem; font-size: 0.9rem;
     }
+    .pinned { border-left: 4px solid #f1c40f !important; }
 </style>
 """, unsafe_allow_html=True)
 
 # =============================================================================
-# 3. AIロジック (Gemini)
+# 4. モデル & API制御
 # =============================================================================
 @st.cache_resource
-def get_model():
+def init_stable_model():
     try:
         genai.configure(api_key=API_KEY)
-        models = [m.name for m in genai.list_models() if "generateContent" in m.supported_generation_methods]
-        target = next((m for m in models if "1.5-flash" in m), models[0] if models else "models/gemini-1.5-flash")
+        priority = ["models/gemini-1.5-flash", "models/gemini-pro", "models/gemini-1.0-pro"]
+        available = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        
+        target = next((p for p in priority if p in available), available[0] if available else None)
+        if not target: return None, "No models available"
         return genai.GenerativeModel(target), target
     except Exception as e:
         return None, str(e)
 
-def call_ai(model, prompt):
+def call_api(model, prompt):
     max_retries = 3
     for i in range(max_retries):
         try:
             response = model.generate_content(prompt)
             return response.text, None
         except Exception as e:
-            if i < max_retries - 1:
+            if "429" in str(e) and i < max_retries - 1:
                 time.sleep((2 ** i) + random.random())
                 continue
             return None, str(e)
-    return None, "Connection failed."
+    return None, "Timeout"
 
 # =============================================================================
-# 4. メインアプリケーション
+# 5. ヘルパー関数
 # =============================================================================
+def add_history(data, is_pro):
+    st.session_state.history.insert(0, {
+        "id": time.time(),
+        "timestamp": datetime.now().strftime("%H:%M:%S"),
+        "style": st.session_state.style,
+        "input": data["input"],
+        "result": data["result"],
+        "pinned": False
+    })
+    
+    if not is_pro:
+        st.session_state.history = st.session_state.history[:1]
+    else:
+        pinned = [item for item in st.session_state.history if item.get("pinned")]
+        unpinned = [item for item in st.session_state.history if not item.get("pinned")]
+        st.session_state.history = (pinned + unpinned)[:20]
+
 def main():
-    model, model_name = get_model()
-
-    # --- Sidebar (Settings & History) ---
+    model, model_name = init_stable_model()
+    
     with st.sidebar:
-        st.title("⚙️ Settings")
-        pwd = st.text_input("🔑 PRO Key", type="password")
+        st.header("⚙️ Settings")
+        pwd = st.text_input("🔑 PRO Password", type="password")
         is_pro = (pwd == PRO_PASSWORD)
-        if is_pro: st.success("✨ PRO Mode")
+        if is_pro: st.success("✨ PRO Activated")
         
         st.divider()
-        st.subheader("📜 History")
+        st.subheader("📜 翻訳履歴")
         if not st.session_state.history:
-            st.caption("No history yet.")
+            st.caption("履歴はありません")
         else:
-            for h in st.session_state.history:
-                st.markdown(f'<div class="history-card">{h}</div>', unsafe_allow_html=True)
-            if st.button("🗑️ Clear History"):
-                st.session_state.history = []
+            pinned_count = sum(1 for item in st.session_state.history if item.get("pinned"))
+            for i, item in enumerate(st.session_state.history):
+                with st.expander(f"{item['timestamp']} | {item['input'][:15]}..."):
+                    st.write(f"**Style:** {item['style']}")
+                    st.write(item['result'])
+                    if is_pro:
+                        val = st.checkbox("📌 ピン留め", value=item.get("pinned"), key=f"pin_{item['id']}")
+                        if val != item.get("pinned"):
+                            if val and pinned_count >= 5:
+                                st.warning("ピン留めは5個までです")
+                            else:
+                                item["pinned"] = val
+                                st.rerun()
+
+    st.markdown('<h1 class="main-title">Jifra 🗼</h1>', unsafe_allow_html=True)
+    st.markdown('<p class="subtitle">Smart AI Refined Translator</p>', unsafe_allow_html=True)
+
+    styles = ["Casual", "Formal", "SNS Casual", "🤖 プロンプト生成 (Pro)"]
+    style_keys = ["casual", "formal", "sns", "prompt_gen"]
+    
+    cols = st.columns(4)
+    for i, (name, key) in enumerate(zip(styles, style_keys)):
+        with cols[i]:
+            disabled = (key in ["sns", "prompt_gen"] and not is_pro)
+            if st.button(name, key=f"btn_{key}", type="primary" if st.session_state.style == key else "secondary", disabled=disabled):
+                st.session_state.style = key
                 st.rerun()
 
-    # --- Header ---
-    st.markdown('<h1 class="main-title">Jifra 🗼</h1>', unsafe_allow_html=True)
-
-    # --- Input Mode (Flag Icons Only) ---
-    st.markdown('<p style="font-weight:600; margin-bottom:0.5rem; color:#8b949e;">Select Mode</p>', unsafe_allow_html=True)
-    mode_options = ["🇯🇵 ➡ 🇫🇷🇺🇸", "🇫🇷 ➡ 🇯🇵🇺🇸", "🇺🇸 ➡ 🇯🇵", "🎨 AI Prompts"]
-    sel_mode = st.radio("Mode", options=mode_options, horizontal=True, label_visibility="collapsed")
+    st.write("")
     
-    # --- Text Area ---
-    input_text = st.text_area(
-        "Input", 
-        value=st.session_state.input_text,
-        placeholder="Enter text to translate or prompt keyword...",
-        height=150,
-        label_visibility="collapsed"
-    )
+    if st.session_state.style == "prompt_gen":
+        st.info("🤖 入力したキーワードを画像生成AI向けの高度なプロンプトに変換します。")
+        sel_mode = "prompt_gen"
+    else:
+        dirs = {"auto": "🔄 自動検知", "ja_fr": "🇯🇵 日 ➡ 🇫🇷 仏", "fr_ja": "🇫🇷 仏 ➡ 🇯🇵 日"}
+        if is_pro:
+            dirs.update({"ja_en": "🇯🇵 日 ➡ 🇺🇸 英", "en_ja": "🇺🇸 英 ➡ 🇯🇵 日"})
+        sel_mode = st.selectbox("Direction", options=list(dirs.keys()), format_func=lambda x: dirs[x], label_visibility="collapsed")
 
-    # --- Action Buttons ---
-    col_run, col_clear = st.columns([4, 1])
-    with col_run:
-        run_btn = st.button("翻訳 / Generate", type="primary", use_container_width=True)
-    with col_clear:
-        if st.button("🗑️", use_container_width=True, help="Clear input and results"):
-            st.session_state.input_text = ""
-            st.session_state.results = None
-            st.rerun()
-
-    # =============================================================================
-    # 5. AI Execution & Formatting
-    # =============================================================================
-    if run_btn:
+    input_text = st.text_area("Input", height=150, placeholder="テキストを入力してください...", label_visibility="collapsed")
+    
+    if st.button("変換・翻訳する", type="primary", use_container_width=True):
         if not input_text.strip():
-            st.warning("⚠️ Please enter some text.")
+            st.warning("テキストを入力してください")
             return
-
-        with st.spinner("🚀 Working..."):
-            if "🎨" in sel_mode:
-                # Prompt Mode
-                sys_prompt = f"""
-Convert the following keyword into 3 types of high-quality AI prompts in English.
-Provide ONLY the requested content. No chit-chat.
-Format strictly:
-[MJ]
-/imagine prompt: ...
-(Translation in JP)
-
-[SD]
-(masterpiece, best quality), ...
-(Translation in JP)
-
-[SYS]
-You are ...
-(Translation in JP)
-
-Input: {input_text}
-"""
-            else:
-                # Translation & SNS Mode (Combined)
-                style_guide = "Casual (friendly) and Formal (business)"
-                sys_prompt = f"""
-As a linguistic expert, translate the following input based on the direction: {sel_mode}.
-Generate results for Casual, Formal, and SNS.
-
-【CRITICAL RULES】
-1. NO IMAGINARY FACTS. Do not create experiences or facts not present in the input. Just rewrite/translate the input.
-2. SNS: One post each for 🇺🇸, 🇫🇷, 🇯🇵 with emoji and hashtags. Keep it sleek. Single empty line between text and tags.
-3. Casual/Formal: Provide two distinct natural patterns with simple back-translations in JP.
-4. Output format MUST be parsable.
-
-Input: {input_text}
-"""
             
-            res, err = call_ai(model, sys_prompt)
+        with st.spinner("Processing..."):
+            if st.session_state.style == "prompt_gen":
+                prompt = f"キーワードから3種類の画像生成プロンプト(英語)を作れ。MJ, SD, System Prompt形式。入力: {input_text}"
+            elif st.session_state.style == "sns":
+                prompt = f"SNS投稿(日・英・仏)を作成。絵文字・タグ付。空行必須。入力: {input_text}"
+            else:
+                tone = "カジュアル" if st.session_state.style == "casual" else "フォーマル"
+                prompt = f"""プロの翻訳者として、{sel_mode}に基づき{tone}な翻訳パターンを2つ、それぞれの戻し訳と共に提示してください。形式:
+パターン1: [翻訳]
+戻し訳1: [訳]
+パターン2: [翻訳]
+戻し訳2: [訳]
+入力: {input_text}"""
+            
+            res, err = call_api(model, prompt)
             if err:
-                st.error(f"❌ Error: {err}")
+                st.error(f"Error: {err}")
             else:
-                st.session_state.results = res
-                st.session_state.input_text = input_text
-                # Update history (keep unique text only)
-                if input_text not in st.session_state.history:
-                    st.session_state.history.insert(0, input_text[:50])
-                    st.session_state.history = st.session_state.history[:10]
+                add_history({"input": input_text, "result": res}, is_pro)
+                st.rerun()
 
-    # =============================================================================
-    # 6. Display Results (Tabs)
-    # =============================================================================
-    if st.session_state.results:
-        raw_res = st.session_state.results
+    if st.session_state.history:
+        latest = st.session_state.history[0]
+        st.divider()
+        st.subheader("✨ Latest Result")
         
-        if "🎨" in sel_mode:
-            st.divider()
-            st.subheader("🎨 AI Prompts")
-            # Simple code display for prompts
-            parts = raw_res.split("[")
-            for p in parts:
-                if "]" in p:
-                    label, content = p.split("]", 1)
-                    st.caption(f"**{label}**")
-                    st.code(content.strip(), language="text")
+        if latest["style"] == "prompt_gen" or latest["style"] == "sns":
+            st.markdown(f'<div class="result-card"><div class="result-text">{latest["result"]}</div></div>', unsafe_allow_html=True)
         else:
-            # Tabs for Casual, Formal, SNS
-            t1, t2, t3 = st.tabs(["Casual", "Formal", "for SNS *PRO"])
-            
-            with t1:
-                st.markdown("**ニュアンス違いの2パターン**")
-                st.code(raw_res, language="text") # Simplified for robustness
-            with t2:
-                st.markdown("**ビジネス・丁寧な表現**")
-                st.code(raw_res, language="text")
-            with t3:
-                if is_pro:
-                    st.markdown("**コピーしてそのまま投稿**")
-                    st.code(raw_res, language="text")
-                else:
-                    st.warning("🔒 SNS Mode is PRO Only.")
+            lines = latest["result"].strip().split('\n')
+            p1_t, p1_b, p2_t, p2_b = "", "", "", ""
+            curr = None
+            for line in lines:
+                if "パターン1" in line: curr = "p1_t"; p1_t = line.split(":", 1)[-1].strip()
+                elif "戻し訳1" in line: curr = "p1_b"; p1_b = line.split(":", 1)[-1].strip()
+                elif "パターン2" in line: curr = "p2_t"; p2_t = line.split(":", 1)[-1].strip()
+                elif "戻し訳2" in line: curr = "p2_b"; p2_b = line.split(":", 1)[-1].strip()
+                elif curr == "p1_t" and line.strip(): p1_t += "\n" + line
+                elif curr == "p1_b" and line.strip(): p1_b += "\n" + line
+                elif curr == "p2_t" and line.strip(): p2_t += "\n" + line
+                elif curr == "p2_b" and line.strip(): p2_b += "\n" + line
+
+            ca, cb = st.columns(2)
+            with ca:
+                st.markdown(f'<div class="result-card"><div class="result-header">💡 Pattern 1</div><div class="result-text">{p1_t if p1_t else latest["result"]}</div><div class="back-trans">🔄 {p1_b}</div></div>', unsafe_allow_html=True)
+            with cb:
+                if p2_t:
+                    st.markdown(f'<div class="result-card"><div class="result-header">💡 Pattern 2</div><div class="result-text">{p2_t}</div><div class="back-trans">🔄 {p2_b}</div></div>', unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()

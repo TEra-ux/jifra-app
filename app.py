@@ -1,7 +1,7 @@
 """
-Jifra 🗼 - AI Smart Translator (Enhanced Edition v9)
-====================================================
-Features: Translation, SNS, Prompt Generation (Star Rating System), History, Pin
+Jifra 🗼 - AI Smart Translator (Enhanced Edition v10)
+=====================================================
+Features: Translation, SNS, Visual Prompt Generation (3-tier), History, Pin
 Tech: Streamlit + Google GenerativeAI (Legacy SDK)
 """
 
@@ -144,44 +144,52 @@ st.markdown("""
     }
     .back-trans { color: #8b949e !important; font-size: 0.9rem; margin-bottom: 1rem; padding-left: 0.5rem; }
     
-    /* 履歴: よりコンパクトで見やすく */
-    .history-row {
-        display: flex;
-        align-items: center;
-        padding: 0.4rem 0.5rem;
+    .history-text {
+        padding: 0.4rem 0.6rem;
         background: #0d1117;
         border: 1px solid #30363d;
         border-radius: 6px;
-        margin-bottom: 0.3rem;
-        gap: 0.5rem;
-    }
-    .history-row.pinned {
-        border-left: 3px solid #f1c40f !important;
-    }
-    .history-text {
-        flex: 1;
         font-size: 0.8rem;
         color: #8b949e;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
     }
-    .history-pin {
-        font-size: 0.9rem;
-        cursor: pointer;
-        color: #f1c40f !important;
-    }
+    .history-pinned { border-left: 3px solid #f1c40f !important; }
     
     .stCode button {
         background-color: #ff6b6b !important;
         color: white !important;
     }
     
-    .star-desc {
-        font-size: 0.75rem;
-        color: #8b949e !important;
+    /* 星評価の説明テキスト */
+    .star-label {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #ffffff !important;
         text-align: center;
         margin-top: 0.3rem;
+    }
+    .star-desc {
+        font-size: 0.7rem;
+        color: #8b949e !important;
+        text-align: center;
+        line-height: 1.3;
+        margin-top: 0.2rem;
+    }
+    
+    /* Visual Prompt ヘッダー */
+    .visual-header {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+        padding: 0.5rem;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 8px;
+        color: white !important;
+        font-weight: 600;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -214,10 +222,9 @@ def call_api(model, prompt):
     return None, "Error"
 
 # =============================================================================
-# 5. 履歴管理（生成後の言葉を保存）
+# 5. 履歴管理
 # =============================================================================
 def add_history(result, is_pro):
-    # 生成後の最初の有効な行を抽出
     lines = result.strip().split('\n')
     summary = ""
     for line in lines:
@@ -256,14 +263,10 @@ def main():
             pinned_count = sum(1 for h in st.session_state.history if h.get("pinned"))
             for h in st.session_state.history:
                 is_pinned = h.get("pinned", False)
-                row_class = "history-row pinned" if is_pinned else "history-row"
-                
-                # ピンボタンを目立たせる
-                pin_icon = "⭐" if is_pinned else "☆"
-                
                 cols = st.columns([5, 1])
                 with cols[0]:
-                    st.markdown(f'<div class="history-text">{h["text"]}...</div>', unsafe_allow_html=True)
+                    css = "history-text history-pinned" if is_pinned else "history-text"
+                    st.markdown(f'<div class="{css}">{h["text"]}...</div>', unsafe_allow_html=True)
                 with cols[1]:
                     if is_pro:
                         if is_pinned:
@@ -293,31 +296,35 @@ def main():
     with c1: st.button("👕 Casual", on_click=set_s, args=('casual',), type="primary" if st.session_state.style=='casual' else "secondary", use_container_width=True)
     with c2: st.button("👔 Formal", on_click=set_s, args=('formal',), type="primary" if st.session_state.style=='formal' else "secondary", use_container_width=True)
     with c3: st.button("📱 SNS", on_click=set_s, args=('sns',), type="primary" if st.session_state.style=='sns' else "secondary", use_container_width=True, disabled=not is_pro)
-    with c4: st.button("🎨 Prompt", on_click=set_s, args=('prompt',), type="primary" if st.session_state.style=='prompt' else "secondary", use_container_width=True)
+    with c4: st.button("🎨 Image", on_click=set_s, args=('prompt',), type="primary" if st.session_state.style=='prompt' else "secondary", use_container_width=True)
 
     st.write("")
     
-    # プロンプトモード: 星評価システム
+    # 画像生成プロンプトモード: 3段階システム
     if st.session_state.style == 'prompt':
-        st.markdown("**Select Level:**")
+        st.markdown('<div class="visual-header">🎨 Visual Prompt Generator / 画像生成プロンプト</div>', unsafe_allow_html=True)
+        
         p1, p2, p3 = st.columns(3)
         
         def set_level(lv): st.session_state.prompt_level = lv
         
         with p1:
             st.button("★", on_click=set_level, args=(1,), type="primary" if st.session_state.prompt_level==1 else "secondary", use_container_width=True)
-            st.markdown('<p class="star-desc">Standard Chat</p>', unsafe_allow_html=True)
+            st.markdown('<p class="star-label">Basic</p>', unsafe_allow_html=True)
+            st.markdown('<p class="star-desc">Direct translation<br>直訳</p>', unsafe_allow_html=True)
         with p2:
             st.button("★★", on_click=set_level, args=(2,), type="primary" if st.session_state.prompt_level==2 else "secondary", use_container_width=True, disabled=not is_pro)
-            st.markdown('<p class="star-desc">System Role</p>', unsafe_allow_html=True)
+            st.markdown('<p class="star-label">Advanced</p>', unsafe_allow_html=True)
+            st.markdown('<p class="star-desc">AI-optimized prompt<br>AI最適化プロンプト</p>', unsafe_allow_html=True)
         with p3:
             st.button("★★★", on_click=set_level, args=(3,), type="primary" if st.session_state.prompt_level==3 else "secondary", use_container_width=True, disabled=not is_pro)
-            st.markdown('<p class="star-desc">Visual Prompt</p>', unsafe_allow_html=True)
+            st.markdown('<p class="star-label">Professional</p>', unsafe_allow_html=True)
+            st.markdown('<p class="star-desc">Pro-level tags<br>プロ仕様タグ</p>', unsafe_allow_html=True)
 
     # 入力欄
     input_text = st.text_area("", value=st.session_state.input_text, height=160, placeholder="Input text...", label_visibility="collapsed")
     
-    # 言語選択（入力欄の下に配置）
+    # 言語選択（翻訳モード時のみ）
     if st.session_state.style not in ['sns', 'prompt']:
         opts = {"🇯🇵 Japanese": "ja", "🇫🇷 French": "fr"}
         if is_pro: opts["🇺🇸 English"] = "en"
@@ -328,7 +335,8 @@ def main():
 
     col_run, col_clear = st.columns([5, 1])
     with col_run:
-        run_btn = st.button("✈️ Translate", type="primary", use_container_width=True)
+        btn_label = "🎨 Generate" if st.session_state.style == 'prompt' else "✈️ Translate"
+        run_btn = st.button(btn_label, type="primary", use_container_width=True)
     with col_clear:
         if st.button("🗑️", use_container_width=True):
             st.session_state.input_text = ""
@@ -337,53 +345,43 @@ def main():
 
     if run_btn and input_text.strip():
         with st.spinner("⏳ Generating..."):
-            STRICT = "OUTPUT ONLY THE RESULT. NO INTRO. NO CHAT. NO AI NAME MENTIONS LIKE 'You are X'."
+            STRICT = "OUTPUT ONLY THE RESULT. NO INTRO. NO CHAT. NO EXPLANATION."
             
             if st.session_state.style == "prompt":
                 level = st.session_state.prompt_level
                 
                 if level == 1:
+                    # ★ Basic: 直訳
                     prompt = f"""{STRICT}
-Create 3 optimized chat prompts from the keyword for daily conversation.
-Add Japanese translation in parentheses after each.
-Do NOT include phrases like "You are..." or AI names in the output.
+Translate the following to English for image generation. Keep it simple and direct.
+Output ONLY the English prompt and its Japanese translation in parentheses.
 
-[prompt 1]
+[English prompt]
 (日本語)
 
-[prompt 2]
-(日本語)
-
-[prompt 3]
-(日本語)
-
-Keyword: {input_text}"""
+Input: {input_text}"""
                 elif level == 2:
+                    # ★★ Advanced: AI構成プロンプト
                     prompt = f"""{STRICT}
-Create 2 advanced system role prompts that define behavior and constraints.
-Add Japanese translation in parentheses after each.
-Do NOT include phrases like "You are..." or any AI names. Make it generic and reusable.
+Create an AI-optimized image generation prompt from the keyword.
+Make it coherent and well-structured for best AI image results.
+Output ONLY the English prompt and its Japanese translation in parentheses.
 
-[system prompt 1]
-(日本語)
-
-[system prompt 2]
+[Optimized English prompt with composition and style]
 (日本語)
 
 Keyword: {input_text}"""
                 else:
+                    # ★★★ Professional: プロ仕様タグ羅列
                     prompt = f"""{STRICT}
-Create 3 powerful image generation prompts with detailed style, lighting, and composition.
-Add Japanese translation in parentheses after each.
-Do NOT include AI names. Output only the visual description.
+Create a professional-level image generation prompt with:
+- Camera settings (lens, aperture, etc.)
+- Lighting (natural, studio, golden hour, etc.)
+- Art style (photorealistic, anime, oil painting, etc.)
+- Composition tags
+Use comma-separated format. Output ONLY the English prompt and its Japanese translation in parentheses.
 
-[visual prompt 1]
-(日本語)
-
-[visual prompt 2]
-(日本語)
-
-[visual prompt 3]
+[tag1, tag2, tag3, camera:X, lighting:Y, style:Z, ...]
 (日本語)
 
 Keyword: {input_text}"""
@@ -409,7 +407,7 @@ Input: {input_text}"""
                 prompt = f"""{STRICT}
 Translate to {lang_name} in {tone} tone. 
 Give 2 variations. Add Japanese back-translation in parentheses after each.
-Do NOT output any labels like [translation 1]. Just output the text directly.
+Do NOT output any labels. Just output the text directly.
 
 First variation
 (日本語)

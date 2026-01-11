@@ -1,5 +1,5 @@
 """
-Jifra 🗼 - AI Smart Translator (Enhanced Edition v6)
+Jifra 🗼 - AI Smart Translator (Enhanced Edition v7)
 ====================================================
 Features: Translation, SNS, Prompt Generation, History, Pin
 Tech: Streamlit + Google GenerativeAI (Legacy SDK)
@@ -30,7 +30,6 @@ if 'style' not in st.session_state: st.session_state.style = 'casual'
 if 'history' not in st.session_state: st.session_state.history = []
 if 'current_result' not in st.session_state: st.session_state.current_result = None
 if 'input_text' not in st.session_state: st.session_state.input_text = ""
-if 'trigger_translate' not in st.session_state: st.session_state.trigger_translate = False
 
 # =============================================================================
 # 3. カスタムデザイン (CSS)
@@ -113,20 +112,17 @@ st.markdown("""
     
     .stSelectbox > div > div { background-color: #161b22 !important; border: 1px solid #30363d !important; color: #ffffff !important; }
     
-    /* コードボックス: スクロールなし、全表示 */
+    /* コードボックス: スクロールなし */
     .stCode { 
         border-radius: 10px !important; 
         border: 1px solid #30363d !important; 
         margin-bottom: 0.3rem !important;
         max-height: none !important;
-        overflow: visible !important;
     }
     .stCode pre { 
         background-color: #161b22 !important; 
         max-height: none !important;
-        overflow: visible !important;
         white-space: pre-wrap !important;
-        word-wrap: break-word !important;
     }
     .stCode code { 
         background-color: #161b22 !important; 
@@ -135,22 +131,6 @@ st.markdown("""
         white-space: pre-wrap !important;
     }
     
-    /* 結果ボックス: コピーしやすいスタイル */
-    .result-box {
-        background-color: #161b22;
-        border: 1px solid #30363d;
-        border-radius: 10px;
-        padding: 1rem;
-        margin-bottom: 0.5rem;
-        position: relative;
-    }
-    .result-text {
-        color: #e6edf3 !important;
-        font-size: 1rem;
-        line-height: 1.5;
-        white-space: pre-wrap;
-        user-select: all;
-    }
     .lang-flag {
         display: inline-block;
         background: linear-gradient(135deg, #ff6b6b 0%, #ff8e53 100%);
@@ -169,6 +149,13 @@ st.markdown("""
         overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     .history-pinned { border-left: 3px solid #f1c40f !important; }
+    
+    /* コピーボタン強調 */
+    .stCode button {
+        background-color: #ff6b6b !important;
+        color: white !important;
+        border: none !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -212,64 +199,7 @@ def add_history(input_text, result, is_pro):
         st.session_state.history = (pinned + unpinned)[:20]
 
 # =============================================================================
-# 6. 翻訳実行
-# =============================================================================
-def run_translation(model, input_text, style, sel_lang, is_pro):
-    STRICT = "OUTPUT ONLY THE RESULT. NO INTRO. NO CHAT."
-    
-    if style == "prompt":
-        prompt = f"""{STRICT}
-Create 3 short AI prompts (English) from the keyword. 
-Add Japanese translation in parentheses after each.
-
-Stable Diffusion:
-[prompt]
-(日本語訳)
-
-System Prompt:
-[prompt]
-(日本語訳)
-
-Midjourney:
-[prompt]
-(日本語訳)
-
-Keyword: {input_text}"""
-    elif style == "sns":
-        prompt = f"""{STRICT}
-Translate to JP/EN/FR for SNS. No imaginary content. Add emoji and hashtags.
-Use [JP] [EN] [FR] as labels instead of emoji flags.
-
-[JP] [text]
-#tags
-
-[EN] [text]
-#tags
-
-[FR] [text]
-#tags
-
-Input: {input_text}"""
-    else:
-        tone = "casual friendly" if style == 'casual' else "formal polite"
-        lang_name = {"ja": "Japanese", "fr": "French", "en": "English"}[sel_lang]
-        prompt = f"""{STRICT}
-Translate to {lang_name} in {tone} tone. 
-Give 2 variations. Add Japanese back-translation in parentheses after each.
-Do NOT use labels.
-
-[translation 1]
-(日本語訳)
-
-[translation 2]
-(日本語訳)
-
-Input: {input_text}"""
-    
-    return call_api(model, prompt)
-
-# =============================================================================
-# 7. メインUI
+# 6. メインUI
 # =============================================================================
 def main():
     model, model_name = init_model()
@@ -330,24 +260,72 @@ def main():
     else:
         sel_lang = None
 
-    # フォームを使ってエンターで送信可能に
-    with st.form(key="translate_form", clear_on_submit=False):
-        input_text = st.text_area("", value=st.session_state.input_text, height=160, placeholder="Input text (Enter to translate)...", label_visibility="collapsed")
-        
-        col_run, col_clear = st.columns([5, 1])
-        with col_run:
-            submitted = st.form_submit_button("✈️ Translate", type="primary", use_container_width=True)
-        with col_clear:
-            clear_btn = st.form_submit_button("🗑️", use_container_width=True)
+    input_text = st.text_area("", value=st.session_state.input_text, height=160, placeholder="Input text...", label_visibility="collapsed")
 
-    if clear_btn:
-        st.session_state.input_text = ""
-        st.session_state.current_result = None
-        st.rerun()
+    col_run, col_clear = st.columns([5, 1])
+    with col_run:
+        run_btn = st.button("✈️ Translate", type="primary", use_container_width=True)
+    with col_clear:
+        if st.button("🗑️", use_container_width=True):
+            st.session_state.input_text = ""
+            st.session_state.current_result = None
+            st.rerun()
 
-    if submitted and input_text.strip():
+    if run_btn and input_text.strip():
         with st.spinner("⏳ Generating..."):
-            res, err = run_translation(model, input_text, st.session_state.style, sel_lang, is_pro)
+            STRICT = "OUTPUT ONLY THE RESULT. NO INTRO. NO CHAT. NO LABELS LIKE '日本語訳:' etc."
+            
+            if st.session_state.style == "prompt":
+                # 一般的なAI名に変更
+                prompt = f"""{STRICT}
+Create 3 short AI prompts (English) from the keyword.
+Add Japanese translation in parentheses after each. Do NOT write "日本語訳:" etc.
+
+Gemini:
+[prompt]
+(translation)
+
+Copilot:
+[prompt]
+(translation)
+
+ChatGPT:
+[prompt]
+(translation)
+
+Keyword: {input_text}"""
+            elif st.session_state.style == "sns":
+                prompt = f"""{STRICT}
+Translate to JP/EN/FR for SNS. No imaginary content. Add emoji and hashtags.
+Use [JP] [EN] [FR] as labels.
+
+[JP] [text]
+#tags
+
+[EN] [text]
+#tags
+
+[FR] [text]
+#tags
+
+Input: {input_text}"""
+            else:
+                tone = "casual friendly" if st.session_state.style == 'casual' else "formal polite"
+                lang_name = {"ja": "Japanese", "fr": "French", "en": "English"}[sel_lang]
+                prompt = f"""{STRICT}
+Translate to {lang_name} in {tone} tone. 
+Give 2 variations. Add Japanese back-translation in parentheses after each.
+Do NOT write labels like "Translation:" or "日本語訳:".
+
+[translation 1]
+(japanese)
+
+[translation 2]
+(japanese)
+
+Input: {input_text}"""
+            
+            res, err = call_api(model, prompt)
         
         if err:
             st.error(f"❌ {err}")
@@ -372,7 +350,7 @@ def main():
             line = line.strip()
             if not line: continue
             
-            # 言語ラベル検出
+            # 言語ラベル検出 [JP] [EN] [FR]
             if line.startswith('[JP]') or line.startswith('[EN]') or line.startswith('[FR]'):
                 if current_block["text"]:
                     blocks.append(current_block)
@@ -382,12 +360,14 @@ def main():
                 current_block["text"] = line[4:].strip()
                 continue
             
+            # 戻し訳 (括弧)
             if line.startswith('(') and line.endswith(')'):
                 current_block["back"] = line
                 if current_block["text"]:
                     blocks.append(current_block)
                     current_block = {"text": "", "back": "", "label": ""}
-            elif line.endswith(':') and len(line) < 30:
+            # AI名ラベル (Gemini: 等)
+            elif line.endswith(':') and len(line) < 20:
                 if current_block["text"]:
                     blocks.append(current_block)
                 current_block = {"text": "", "back": "", "label": line[:-1]}

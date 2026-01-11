@@ -1,5 +1,5 @@
 """
-Jifra 🗼 - AI Smart Translator (Enhanced Edition v5)
+Jifra 🗼 - AI Smart Translator (Enhanced Edition v6)
 ====================================================
 Features: Translation, SNS, Prompt Generation, History, Pin
 Tech: Streamlit + Google GenerativeAI (Legacy SDK)
@@ -30,6 +30,7 @@ if 'style' not in st.session_state: st.session_state.style = 'casual'
 if 'history' not in st.session_state: st.session_state.history = []
 if 'current_result' not in st.session_state: st.session_state.current_result = None
 if 'input_text' not in st.session_state: st.session_state.input_text = ""
+if 'trigger_translate' not in st.session_state: st.session_state.trigger_translate = False
 
 # =============================================================================
 # 3. カスタムデザイン (CSS)
@@ -112,22 +113,62 @@ st.markdown("""
     
     .stSelectbox > div > div { background-color: #161b22 !important; border: 1px solid #30363d !important; color: #ffffff !important; }
     
-    .stCode { border-radius: 10px !important; border: 1px solid #30363d !important; margin-bottom: 0.3rem !important; }
-    .stCode pre { background-color: #161b22 !important; }
-    .stCode code { background-color: #161b22 !important; color: #e6edf3 !important; font-size: 1rem !important; }
+    /* コードボックス: スクロールなし、全表示 */
+    .stCode { 
+        border-radius: 10px !important; 
+        border: 1px solid #30363d !important; 
+        margin-bottom: 0.3rem !important;
+        max-height: none !important;
+        overflow: visible !important;
+    }
+    .stCode pre { 
+        background-color: #161b22 !important; 
+        max-height: none !important;
+        overflow: visible !important;
+        white-space: pre-wrap !important;
+        word-wrap: break-word !important;
+    }
+    .stCode code { 
+        background-color: #161b22 !important; 
+        color: #e6edf3 !important; 
+        font-size: 1rem !important;
+        white-space: pre-wrap !important;
+    }
     
-    /* 戻し訳スタイル */
+    /* 結果ボックス: コピーしやすいスタイル */
+    .result-box {
+        background-color: #161b22;
+        border: 1px solid #30363d;
+        border-radius: 10px;
+        padding: 1rem;
+        margin-bottom: 0.5rem;
+        position: relative;
+    }
+    .result-text {
+        color: #e6edf3 !important;
+        font-size: 1rem;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        user-select: all;
+    }
+    .lang-flag {
+        display: inline-block;
+        background: linear-gradient(135deg, #ff6b6b 0%, #ff8e53 100%);
+        color: white !important;
+        padding: 0.2rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+    }
     .back-trans { color: #8b949e !important; font-size: 0.9rem; margin-bottom: 1rem; padding-left: 0.5rem; }
     
-    /* 履歴: コンパクトに */
-    .history-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.3rem; }
     .history-text { 
-        flex: 1; padding: 0.4rem 0.6rem; background: #0d1117; border: 1px solid #30363d;
+        padding: 0.4rem 0.6rem; background: #0d1117; border: 1px solid #30363d;
         border-radius: 6px; font-size: 0.8rem; color: #8b949e;
         overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     .history-pinned { border-left: 3px solid #f1c40f !important; }
-    .pin-btn { font-size: 0.7rem; cursor: pointer; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -171,7 +212,64 @@ def add_history(input_text, result, is_pro):
         st.session_state.history = (pinned + unpinned)[:20]
 
 # =============================================================================
-# 6. メインUI
+# 6. 翻訳実行
+# =============================================================================
+def run_translation(model, input_text, style, sel_lang, is_pro):
+    STRICT = "OUTPUT ONLY THE RESULT. NO INTRO. NO CHAT."
+    
+    if style == "prompt":
+        prompt = f"""{STRICT}
+Create 3 short AI prompts (English) from the keyword. 
+Add Japanese translation in parentheses after each.
+
+Stable Diffusion:
+[prompt]
+(日本語訳)
+
+System Prompt:
+[prompt]
+(日本語訳)
+
+Midjourney:
+[prompt]
+(日本語訳)
+
+Keyword: {input_text}"""
+    elif style == "sns":
+        prompt = f"""{STRICT}
+Translate to JP/EN/FR for SNS. No imaginary content. Add emoji and hashtags.
+Use [JP] [EN] [FR] as labels instead of emoji flags.
+
+[JP] [text]
+#tags
+
+[EN] [text]
+#tags
+
+[FR] [text]
+#tags
+
+Input: {input_text}"""
+    else:
+        tone = "casual friendly" if style == 'casual' else "formal polite"
+        lang_name = {"ja": "Japanese", "fr": "French", "en": "English"}[sel_lang]
+        prompt = f"""{STRICT}
+Translate to {lang_name} in {tone} tone. 
+Give 2 variations. Add Japanese back-translation in parentheses after each.
+Do NOT use labels.
+
+[translation 1]
+(日本語訳)
+
+[translation 2]
+(日本語訳)
+
+Input: {input_text}"""
+    
+    return call_api(model, prompt)
+
+# =============================================================================
+# 7. メインUI
 # =============================================================================
 def main():
     model, model_name = init_model()
@@ -232,73 +330,24 @@ def main():
     else:
         sel_lang = None
 
-    input_text = st.text_area("", value=st.session_state.input_text, height=160, placeholder="Input text (auto-detect)...", label_visibility="collapsed")
-
-    col_run, col_clear = st.columns([5, 1])
-    with col_run:
-        run_btn = st.button("✈️ Translate", type="primary", use_container_width=True)
-    with col_clear:
-        if st.button("🗑️", use_container_width=True):
-            st.session_state.input_text = ""
-            st.session_state.current_result = None
-            st.rerun()
-
-    if run_btn:
-        if not input_text.strip(): return
+    # フォームを使ってエンターで送信可能に
+    with st.form(key="translate_form", clear_on_submit=False):
+        input_text = st.text_area("", value=st.session_state.input_text, height=160, placeholder="Input text (Enter to translate)...", label_visibility="collapsed")
         
+        col_run, col_clear = st.columns([5, 1])
+        with col_run:
+            submitted = st.form_submit_button("✈️ Translate", type="primary", use_container_width=True)
+        with col_clear:
+            clear_btn = st.form_submit_button("🗑️", use_container_width=True)
+
+    if clear_btn:
+        st.session_state.input_text = ""
+        st.session_state.current_result = None
+        st.rerun()
+
+    if submitted and input_text.strip():
         with st.spinner("⏳ Generating..."):
-            STRICT = "OUTPUT ONLY THE RESULT. NO INTRO. NO CHAT."
-            
-            if st.session_state.style == "prompt":
-                # 順序変更: Stable Diffusion → System Prompt → Midjourney
-                prompt = f"""{STRICT}
-Create 3 short AI prompts (English) from the keyword. 
-Format exactly as shown. Add Japanese translation in parentheses after each.
-
-Stable Diffusion:
-[short prompt]
-(日本語訳)
-
-System Prompt:
-[short prompt]
-(日本語訳)
-
-Midjourney:
-[short prompt]
-(日本語訳)
-
-Keyword: {input_text}"""
-            elif st.session_state.style == "sns":
-                prompt = f"""{STRICT}
-Translate to JP/EN/FR for SNS. No imaginary content. Add emoji and hashtags.
-
-🇯🇵 [text]
-#tags
-
-🇺🇸 [text]
-#tags
-
-🇫🇷 [text]
-#tags
-
-Input: {input_text}"""
-            else:
-                tone = "casual friendly" if st.session_state.style == 'casual' else "formal polite"
-                lang_name = {"ja": "Japanese", "fr": "French", "en": "English"}[sel_lang]
-                prompt = f"""{STRICT}
-Translate to {lang_name} in {tone} tone. 
-Give 2 variations. Add Japanese back-translation in parentheses after each.
-Do NOT use labels.
-
-[translation 1]
-(日本語訳)
-
-[translation 2]
-(日本語訳)
-
-Input: {input_text}"""
-            
-            res, err = call_api(model, prompt)
+            res, err = run_translation(model, input_text, st.session_state.style, sel_lang, is_pro)
         
         if err:
             st.error(f"❌ {err}")
@@ -308,50 +357,58 @@ Input: {input_text}"""
             add_history(input_text, res, is_pro)
             st.rerun()
 
-    # 結果表示: 各翻訳を個別コードボックス + 戻し訳
+    # 結果表示
     if st.session_state.current_result:
         st.divider()
         res_data = st.session_state.current_result
         raw = res_data["raw"]
         style = res_data["style"]
         
-        # パース処理
         lines = raw.strip().split('\n')
         blocks = []
-        current_block = {"text": "", "back": ""}
+        current_block = {"text": "", "back": "", "label": ""}
         
         for line in lines:
             line = line.strip()
             if not line: continue
             
-            # 戻し訳 (括弧で囲まれている)
+            # 言語ラベル検出
+            if line.startswith('[JP]') or line.startswith('[EN]') or line.startswith('[FR]'):
+                if current_block["text"]:
+                    blocks.append(current_block)
+                    current_block = {"text": "", "back": "", "label": ""}
+                label = line[:4]
+                current_block["label"] = {"[JP]": "🇯🇵 JP", "[EN]": "🇺🇸 EN", "[FR]": "🇫🇷 FR"}.get(label, label)
+                current_block["text"] = line[4:].strip()
+                continue
+            
             if line.startswith('(') and line.endswith(')'):
                 current_block["back"] = line
                 if current_block["text"]:
                     blocks.append(current_block)
-                    current_block = {"text": "", "back": ""}
-            # ラベル行（Stable Diffusion:等）はスキップ
+                    current_block = {"text": "", "back": "", "label": ""}
             elif line.endswith(':') and len(line) < 30:
-                continue
+                if current_block["text"]:
+                    blocks.append(current_block)
+                current_block = {"text": "", "back": "", "label": line[:-1]}
             else:
                 if current_block["text"]:
                     current_block["text"] += "\n" + line
                 else:
                     current_block["text"] = line
         
-        # 最後のブロックを追加
         if current_block["text"]:
             blocks.append(current_block)
         
-        # 表示
         if blocks:
             for b in blocks:
+                if b["label"]:
+                    st.markdown(f'<span class="lang-flag">{b["label"]}</span>', unsafe_allow_html=True)
                 if b["text"]:
                     st.code(b["text"], language="text")
                     if b["back"]:
                         st.markdown(f'<p class="back-trans">{b["back"]}</p>', unsafe_allow_html=True)
         else:
-            # パースできなかった場合はそのまま表示
             st.code(raw, language="text")
 
 if __name__ == "__main__":

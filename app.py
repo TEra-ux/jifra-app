@@ -1,5 +1,5 @@
 """
-Jifra 🗼 - AI Smart Translator (Enhanced Edition v10)
+Jifra 🗼 - AI Smart Translator (Enhanced Edition v11)
 =====================================================
 Features: Translation, SNS, Visual Prompt Generation (3-tier), History, Pin
 Tech: Streamlit + Google GenerativeAI (Legacy SDK)
@@ -144,7 +144,15 @@ st.markdown("""
     }
     .back-trans { color: #8b949e !important; font-size: 0.9rem; margin-bottom: 1rem; padding-left: 0.5rem; }
     
+    /* 履歴アイテム */
+    .history-row {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 0.4rem;
+    }
     .history-text {
+        flex: 1;
         padding: 0.4rem 0.6rem;
         background: #0d1117;
         border: 1px solid #30363d;
@@ -156,13 +164,17 @@ st.markdown("""
         white-space: nowrap;
     }
     .history-pinned { border-left: 3px solid #f1c40f !important; }
+    .pin-icon {
+        font-size: 1.2rem;
+        cursor: pointer;
+        user-select: none;
+    }
     
     .stCode button {
         background-color: #ff6b6b !important;
         color: white !important;
     }
     
-    /* 星評価の説明テキスト */
     .star-label {
         font-size: 0.85rem;
         font-weight: 600;
@@ -176,20 +188,6 @@ st.markdown("""
         text-align: center;
         line-height: 1.3;
         margin-top: 0.2rem;
-    }
-    
-    /* Visual Prompt ヘッダー */
-    .visual-header {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 0.5rem;
-        margin-bottom: 1rem;
-        padding: 0.5rem;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        border-radius: 8px;
-        color: white !important;
-        font-weight: 600;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -263,20 +261,25 @@ def main():
             pinned_count = sum(1 for h in st.session_state.history if h.get("pinned"))
             for h in st.session_state.history:
                 is_pinned = h.get("pinned", False)
-                cols = st.columns([5, 1])
-                with cols[0]:
-                    css = "history-text history-pinned" if is_pinned else "history-text"
-                    st.markdown(f'<div class="{css}">{h["text"]}...</div>', unsafe_allow_html=True)
-                with cols[1]:
-                    if is_pro:
+                css = "history-text history-pinned" if is_pinned else "history-text"
+                
+                # アイコンでピン表示
+                if is_pro:
+                    pin_icon = "📌" if is_pinned else "📍"
+                    col1, col2 = st.columns([6, 1])
+                    with col1:
+                        st.markdown(f'<div class="{css}">{h["text"]}...</div>', unsafe_allow_html=True)
+                    with col2:
                         if is_pinned:
-                            if st.button("⭐", key=f"u_{h['id']}", help="Unpin"):
+                            if st.button(pin_icon, key=f"u_{h['id']}", help="Unpin"):
                                 h["pinned"] = False
                                 st.rerun()
                         elif pinned_count < 5:
-                            if st.button("☆", key=f"p_{h['id']}", help="Pin"):
+                            if st.button(pin_icon, key=f"p_{h['id']}", help="Pin"):
                                 h["pinned"] = True
                                 st.rerun()
+                else:
+                    st.markdown(f'<div class="{css}">{h["text"]}...</div>', unsafe_allow_html=True)
             
             if st.button("🗑️ Clear"):
                 st.session_state.history = [h for h in st.session_state.history if h.get("pinned")]
@@ -335,13 +338,13 @@ def main():
 
     col_run, col_clear = st.columns([5, 1])
     with col_run:
-        # 条件分岐: 翻訳系はTranslate、SNS/★★以上はCreate
+        # 条件分岐: 翻訳系はTranslate、SNS/★★以上はMetamorph
         if st.session_state.style in ['casual', 'formal']:
             btn_label = "✈️ Translate"
         elif st.session_state.style == 'prompt' and st.session_state.prompt_level == 1:
             btn_label = "✈️ Translate"
         else:
-            btn_label = "🎨 Create"
+            btn_label = "🦋 Metamorph"
         run_btn = st.button(btn_label, type="primary", use_container_width=True)
     with col_clear:
         if st.button("🗑️", use_container_width=True):
@@ -351,46 +354,38 @@ def main():
 
     if run_btn and input_text.strip():
         with st.spinner("⏳ Generating..."):
-            STRICT = "OUTPUT ONLY THE RESULT. NO INTRO. NO CHAT. NO EXPLANATION."
+            STRICT = "OUTPUT ONLY THE RESULT. NO INTRO. NO CHAT. NO EXPLANATION. SEPARATE EACH OUTPUT WITH A BLANK LINE."
             
             if st.session_state.style == "prompt":
                 level = st.session_state.prompt_level
                 
                 if level == 1:
-                    # ★ Basic: 直訳
+                    # ★ Literal: 画像生成視点の忠実な翻訳
                     prompt = f"""{STRICT}
-Translate the following to English for image generation. Keep it simple and direct.
-Output ONLY the English prompt and its Japanese translation in parentheses.
+Convert this to a simple English image generation prompt.
+Keep the original meaning but phrase it for visual AI (describe what to see, not actions).
+Output the English prompt first, then the Japanese back-translation in parentheses on a NEW LINE.
 
-[English prompt]
-(日本語)
-
-Input: {input_text}"""
+{input_text}"""
                 elif level == 2:
-                    # ★★ Advanced: AI構成プロンプト
+                    # ★★ Creative: 豊かな表現
                     prompt = f"""{STRICT}
-Create an AI-optimized image generation prompt from the keyword.
-Make it coherent and well-structured for best AI image results.
-Output ONLY the English prompt and its Japanese translation in parentheses.
+Create a rich, narrative image generation prompt from this keyword.
+Add atmosphere, mood, and artistic elements.
+Output the English prompt first, then the Japanese back-translation in parentheses on a NEW LINE.
 
-[Optimized English prompt with composition and style]
-(日本語)
-
-Keyword: {input_text}"""
+{input_text}"""
                 else:
-                    # ★★★ Professional: プロ仕様タグ羅列
+                    # ★★★ Masterpiece: プロ仕様タグ
                     prompt = f"""{STRICT}
 Create a professional-level image generation prompt with:
 - Camera settings (lens, aperture, etc.)
 - Lighting (natural, studio, golden hour, etc.)
 - Art style (photorealistic, anime, oil painting, etc.)
-- Composition tags
-Use comma-separated format. Output ONLY the English prompt and its Japanese translation in parentheses.
+Use comma-separated format.
+Output the English prompt first, then the Japanese back-translation in parentheses on a NEW LINE.
 
-[tag1, tag2, tag3, camera:X, lighting:Y, style:Z, ...]
-(日本語)
-
-Keyword: {input_text}"""
+{input_text}"""
                     
             elif st.session_state.style == "sns":
                 prompt = f"""{STRICT}
@@ -412,14 +407,9 @@ Input: {input_text}"""
                 lang_name = {"ja": "Japanese", "fr": "French", "en": "English"}[sel_lang]
                 prompt = f"""{STRICT}
 Translate to {lang_name} in {tone} tone. 
-Give 2 variations. Add Japanese back-translation in parentheses after each.
-Do NOT output any labels. Just output the text directly.
-
-First variation
-(日本語)
-
-Second variation
-(日本語)
+Give 2 variations. Each variation should be on its own line.
+After each variation, add the Japanese back-translation in parentheses on a NEW LINE.
+Do NOT combine them on the same line.
 
 Input: {input_text}"""
             
@@ -447,6 +437,7 @@ Input: {input_text}"""
             line = line.strip()
             if not line: continue
             
+            # SNSラベル
             if line.startswith('[JP]') or line.startswith('[EN]') or line.startswith('[FR]'):
                 if current_block["text"]:
                     blocks.append(current_block)
@@ -456,18 +447,28 @@ Input: {input_text}"""
                 current_block["text"] = line[4:].strip()
                 continue
             
+            # 戻し訳（括弧で始まり括弧で終わる）
             if line.startswith('(') and line.endswith(')'):
                 current_block["back"] = line
                 if current_block["text"]:
                     blocks.append(current_block)
                     current_block = {"text": "", "back": "", "label": ""}
+            # ラベル行をスキップ
             elif line.startswith('[') and line.endswith(']'):
                 if current_block["text"]:
                     blocks.append(current_block)
                 current_block = {"text": "", "back": "", "label": ""}
             else:
+                # 通常テキスト
                 if current_block["text"]:
-                    current_block["text"] += "\n" + line
+                    # 同じブロックに追加しない、新しいブロックとして追加
+                    if current_block["back"]:
+                        # 既に戻し訳がある場合は新しいブロック
+                        blocks.append(current_block)
+                        current_block = {"text": line, "back": "", "label": ""}
+                    else:
+                        # まだ戻し訳がない場合は改行で追加
+                        current_block["text"] += "\n" + line
                 else:
                     current_block["text"] = line
         

@@ -274,7 +274,7 @@ def main():
                                 h["pinned"] = False
                                 st.rerun()
                         elif pinned_count < 5:
-                            if st.button("☆", key=f"p_{h['id']}", help="Pin"):
+                            if st.button(" ", key=f"p_{h['id']}", help="Pin"):
                                 h["pinned"] = True
                                 st.rerun()
                 else:

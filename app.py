@@ -1,8 +1,8 @@
 """
-Jifra 🗼 - AI Smart Translator (Final Stable Edition)
-====================================================
-Tech: Streamlit + Google GenerativeAI (Legacy SDK)
-Stability: Model Auto-Discovery + API v1 Fixed
+Jifra 🗼 - AI Smart Translator & Prompt generator (Refactored Edition)
+=====================================================================
+Features: Translation, SNS mode, Prompt Generation (PRO)
+Systems: Session-based History, Pinning, Security Hardened
 """
 
 import streamlit as st
@@ -10,20 +10,25 @@ import google.generativeai as genai
 import re
 import time
 import random
+from datetime import datetime
 
 # =============================================================================
-# 1. 認証設定 (Streamlit Secrets)
+# 1. セキュリティ設定 (Streamlit Secrets)
 # =============================================================================
-# キー名は小文字で統一
 try:
-    API_KEY = st.secrets["gemini_api_key"]
-    PRO_PASSWORD = st.secrets["pro_password"]
+    API_KEY = st.secrets["GEMINI_API_KEY"]
+    PRO_PASSWORD = st.secrets["PRO_PASSWORD"]
 except KeyError:
-    st.error("❌ Streamlit Secrets 'gemini_api_key' or 'pro_password' not found.")
-    st.stop()
+    try:
+        # 互換性のためのフォールバック
+        API_KEY = st.secrets["gemini_api_key"]
+        PRO_PASSWORD = st.secrets["pro_password"]
+    except KeyError:
+        st.error("❌ Secretsに 'GEMINI_API_KEY' または 'PRO_PASSWORD' が設定されていません。")
+        st.stop()
 
 # =============================================================================
-# 2. ページ基本設定
+# 2. ページ基本設定 & Session State 初期化
 # =============================================================================
 st.set_page_config(
     page_title="Jifra 🗼",
@@ -31,8 +36,13 @@ st.set_page_config(
     layout="centered"
 )
 
+if 'history' not in st.session_state:
+    st.session_state.history = []
+if 'style' not in st.session_state:
+    st.session_state.style = 'casual'
+
 # =============================================================================
-# 3. カスタムデザイン (黒背景・高級感)
+# 3. カスタムデザイン (CSS)
 # =============================================================================
 st.markdown("""
 <style>
@@ -41,18 +51,13 @@ st.markdown("""
     }
     .main .block-container { padding-top: 2rem; max-width: 700px; }
     
-    /* サイドバーの視認性改善 */
+    /* サイドバー */
     [data-testid="stSidebar"] {
         background-color: #161b22 !important;
         border-right: 1px solid #30363d;
     }
-    [data-testid="stSidebar"] * {
-        color: #e6edf3 !important;
-    }
-    [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2 {
-        color: #ffffff !important;
-    }
-    /* サイドバー内のテキスト入力 */
+    [data-testid="stSidebar"] * { color: #e6edf3 !important; }
+    [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2 { color: #ffffff !important; }
     [data-testid="stSidebar"] .stTextInput input {
         background-color: #0d1117 !important;
         color: #ffffff !important;
@@ -68,189 +73,215 @@ st.markdown("""
         margin-bottom: 0.2rem;
     }
     .subtitle { text-align: center; color: #8b949e !important; font-size: 1.1rem; margin-bottom: 2.5rem; }
-    .stSelectbox > div > div { background-color: #161b22 !important; border: 1px solid #30363d !important; color: #ffffff !important; }
-    div.stButton > button { width: 100%; border-radius: 10px !important; font-weight: 600 !important; border: none !important; height: 3rem; }
+    
+    div.stButton > button { width: 100%; border-radius: 10px !important; font-weight: 600 !important; border: none !important; height: 3rem; transition: 0.2s; }
     div.stButton > button[kind="primary"] { background: linear-gradient(135deg, #ff6b6b 0%, #ee5253 100%) !important; color: white !important; }
     div.stButton > button[kind="secondary"] { background-color: #21262d !important; color: #c9d1d9 !important; border: 1px solid #30363d !important; }
-    .stTextArea textarea { background-color: #0d1117 !important; border: 2px solid #30363d !important; border-radius: 12px !important; color: #ffffff !important; font-size: 1.1rem !important; }
     
+    .stTextArea textarea { background-color: #0d1117 !important; border: 2px solid #30363d !important; border-radius: 12px !important; color: #ffffff !important; font-size: 1.1rem !important; }
+    .stSelectbox > div > div { background-color: #161b22 !important; border: 1px solid #30363d !important; color: #ffffff !important; }
+
     /* 結果カード */
     .result-card { background-color: #161b22; border: 1px solid #30363d; border-left: 5px solid #ff6b6b; border-radius: 12px; padding: 1.2rem; margin-top: 1rem; }
-    .result-header { color: #ff6b6b !important; font-size: 0.75rem; font-weight: 700; margin-bottom: 0.4rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    .result-header { color: #ff6b6b !important; font-size: 0.75rem; font-weight: 700; margin-bottom: 0.4rem; text-transform: uppercase; }
     .result-text { color: #e6edf3 !important; font-size: 1.05rem; line-height: 1.5; white-space: pre-wrap; }
-    .pattern-label { color: #8b949e !important; font-size: 0.8rem; margin-top: 0.8rem; border-top: 1px solid #30363d; padding-top: 0.5rem; }
+    .back-trans { color: #8b949e !important; font-size: 0.9rem; margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid #30363d; }
+    
+    /* 履歴セクション */
+    .history-item { 
+        background-color: #0d1117; border: 1px solid #30363d; border-radius: 8px; 
+        padding: 0.8rem; margin-bottom: 0.5rem; font-size: 0.9rem;
+    }
+    .pinned { border-left: 4px solid #f1c40f !important; }
 </style>
 """, unsafe_allow_html=True)
 
 # =============================================================================
-# 4. モデル初期化 (Legacy SDK)
+# 4. モデル & API制御
 # =============================================================================
 @st.cache_resource
 def init_stable_model():
     try:
         genai.configure(api_key=API_KEY)
+        priority = ["models/gemini-1.5-flash", "models/gemini-pro", "models/gemini-1.0-pro"]
+        available = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
         
-        # 利用可能なモデルを取得
-        available = []
-        try:
-            for m in genai.list_models():
-                if 'generateContent' in m.supported_generation_methods:
-                    available.append(m.name)
-        except:
-            pass
-
-        # 最も安定しているモデル順
-        priority = [
-            "models/gemini-1.5-flash",
-            "models/gemini-pro",
-            "models/gemini-1.0-pro"
-        ]
-        
-        target = None
-        for p in priority:
-            if p in available:
-                target = p
-                break
-        
-        if not target:
-            target = available[0] if available else "models/gemini-1.5-flash"
-            
+        target = next((p for p in priority if p in available), available[0] if available else None)
+        if not target: return None, "No models available"
         return genai.GenerativeModel(target), target
     except Exception as e:
         return None, str(e)
 
-def call_api_with_retry(model, prompt, st_box):
+def call_api(model, prompt):
     max_retries = 3
     for i in range(max_retries):
         try:
             response = model.generate_content(prompt)
             return response.text, None
         except Exception as e:
-            err = str(e)
-            if "429" in err or "ResourceExhausted" in err:
-                if i < max_retries - 1:
-                    wait = (2 ** i) + random.random()
-                    time.sleep(wait)
-                    continue
-            return None, err
-    return None, "Error"
+            if "429" in str(e) and i < max_retries - 1:
+                time.sleep((2 ** i) + random.random())
+                continue
+            return None, str(e)
+    return None, "Timeout"
 
 # =============================================================================
-# 5. ロジック & UI
+# 5. ヘルパー関数
 # =============================================================================
-def simple_detect(text):
+def add_history(data, is_pro):
+    # 履歴追加
+    st.session_state.history.insert(0, {
+        "id": time.time(),
+        "timestamp": datetime.now().strftime("%H:%M:%S"),
+        "style": st.session_state.style,
+        "input": data["input"],
+        "result": data["result"],
+        "pinned": False
+    })
+    
+    # 制限適用
+    if not is_pro:
+        # Free: 最新1件のみ (ピン留め考慮なし)
+        st.session_state.history = st.session_state.history[:1]
+    else:
+        # Pro: 最大20件。ピン留めされているものは保持。
+        pinned = [item for item in st.session_state.history if item.get("pinned")]
+        unpinned = [item for item in st.session_state.history if not item.get("pinned")]
+        st.session_state.history = (pinned + unpinned)[:20]
+
+def detect_lang(text):
     if re.search(r'[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]', text): return 'ja'
-    if re.search(r'[àâäéèêëïîôùûüçœæ]', text): return 'fr'
     return 'en'
 
+# =============================================================================
+# 6. メインロジック
+# =============================================================================
 def main():
-    if 'style' not in st.session_state: st.session_state.style = 'casual'
-    
     model, model_name = init_stable_model()
-
+    
+    # --- Sidebar ---
     with st.sidebar:
         st.header("⚙️ Settings")
-        p_input = st.text_input("🔑 PRO Password", type="password")
-        is_pro = (p_input == PRO_PASSWORD)
+        pwd = st.text_input("🔑 PRO Password", type="password")
+        is_pro = (pwd == PRO_PASSWORD)
         if is_pro: st.success("✨ PRO Activated")
+        
         st.divider()
-        st.caption(f"Connected: {model_name}")
+        st.subheader("📜 翻訳履歴")
+        if not st.session_state.history:
+            st.caption("履歴はありません")
+        else:
+            pinned_count = sum(1 for item in st.session_state.history if item.get("pinned"))
+            for i, item in enumerate(st.session_state.history):
+                with st.expander(f"{item['timestamp']} | {item['input'][:15]}..."):
+                    st.write(f"**Style:** {item['style']}")
+                    st.write(item['result'])
+                    if is_pro:
+                        # ピン留め機能
+                        val = st.checkbox("📌 ピン留め", value=item.get("pinned"), key=f"pin_{item['id']}")
+                        if val != item.get("pinned"):
+                            if val and pinned_count >= 5:
+                                st.warning("ピン留めは5個までです")
+                            else:
+                                item["pinned"] = val
+                                st.rerun()
 
+    # --- Main UI ---
     st.markdown('<h1 class="main-title">Jifra 🗼</h1>', unsafe_allow_html=True)
-    st.markdown('<p class="subtitle">Premium AI Smart Translator</p>', unsafe_allow_html=True)
+    st.markdown('<p class="subtitle">Smart AI Refined Translator</p>', unsafe_allow_html=True)
 
-    c1, c2, c3 = st.columns(3)
-    def set_s(s): st.session_state.style = s
-    with c1: st.button("💬 Casual", on_click=set_s, args=('casual',), type="primary" if st.session_state.style=='casual' else "secondary", use_container_width=True)
-    with c2: st.button("👔 Formal", on_click=set_s, args=('formal',), type="primary" if st.session_state.style=='formal' else "secondary", use_container_width=True)
-    with c3: st.button("📱 SNS [PRO]", on_click=set_s, args=('sns',), type="primary" if st.session_state.style=='sns' else "secondary", use_container_width=True, disabled=not is_pro)
+    # スタイル選択 (2行に分けるなどして対応)
+    styles = ["Casual", "Formal", "SNS Casual", "🤖 プロンプト生成 (Pro)"]
+    style_keys = ["casual", "formal", "sns", "prompt_gen"]
+    
+    cols = st.columns(4)
+    for i, (name, key) in enumerate(zip(styles, style_keys)):
+        with cols[i]:
+            disabled = (key in ["sns", "prompt_gen"] and not is_pro)
+            if st.button(name, key=f"btn_{key}", type="primary" if st.session_state.style == key else "secondary", disabled=disabled):
+                st.session_state.style = key
+                st.rerun()
 
     st.write("")
-    opts = {"auto": "🔄 自動検知 / Auto Detect", "ja_fr": "🇯🇵 日 ➡ 🇫🇷 仏", "fr_ja": "🇫🇷 仏 ➡ 🇯🇵 日"}
-    if is_pro: opts.update({"ja_en": "🇯🇵 日 ➡ 🇺🇸 英", "en_ja": "🇺🇸 英 ➡ 🇯🇵 日", "en_fr": "🇺🇸 英 ➡ 🇫🇷 仏", "fr_en": "🇫🇷 仏 ➡ 🇺🇸 英"})
-    sel_mode = st.selectbox("Dir", options=list(opts.keys()), format_func=lambda x: opts[x], label_visibility="collapsed")
     
-    input_text = st.text_area("Input", height=180, placeholder="テキストを入力...", label_visibility="collapsed")
-    st_box = st.empty()
+    # モード選択
+    if st.session_state.style == "prompt_gen":
+        st.info("🤖 入力したキーワードを画像生成AI向けの高度なプロンプトに変換します。")
+        sel_mode = "prompt_gen"
+    else:
+        dirs = {"auto": "🔄 自動検知", "ja_fr": "🇯🇵 日 ➡ 🇫🇷 仏", "fr_ja": "🇫🇷 仏 ➡ 🇯🇵 日"}
+        if is_pro:
+            dirs.update({"ja_en": "🇯🇵 日 ➡ 🇺🇸 英", "en_ja": "🇺🇸 英 ➡ 🇯🇵 日"})
+        sel_mode = st.selectbox("Direction", options=list(dirs.keys()), format_func=lambda x: dirs[x], label_visibility="collapsed")
 
-    if st.button("翻訳する / Translate", type="primary", use_container_width=True):
-        if not input_text.strip(): return
-        if not is_pro and sel_mode == "auto" and simple_detect(input_text) == 'en':
-            st.error("🔒 PRO機能です。")
+    input_text = st.text_area("Input", height=150, placeholder="テキストを入力してください...", label_visibility="collapsed")
+    
+    if st.button("変換・翻訳する", type="primary", use_container_width=True):
+        if not input_text.strip():
+            st.warning("テキストを入力してください")
             return
-
-        with st.spinner("AI処理中..."):
-            # プロンプト生成 (スタイル別に分岐)
-            if st.session_state.style == "sns":
-                prompt = f"""
-あなたはSNSマーケティングのプロです。以下のテキストを元に、日・英・仏の3言語でSNS投稿を作成してください。
-【要件】
-- 各言語、絵文字とハッシュタグを3つ以上入れる
-- 本文とハッシュタグの間に必ず空行を入れる
-- 説明は一切不要、以下のフォーマットのみ出力
-【出力形式】
-🇯🇵 日本語:
-[本文]
-(空行)
-#タグ
-
-🇺🇸 English:
-[Body]
-(空行)
-#Hashtags
-
-🇫🇷 Français:
-[Corps]
-(空行)
-#Hashtags
-【入力】
-{input_text}
-"""
-            else:
-                tone = "カジュアルで親しみやすい" if st.session_state.style == 'casual' else "ビジネス向けのフォーマルな"
-                prompt = f"""
-あなたはプロの翻訳家です。以下の入力を{sel_mode}に基づき、{tone}表現で翻訳してください。
-【要件】
-- ニュアンスの異なる翻訳パターンを2つ提示してください
-- 各パターンに対し、必ず元の言語への「戻し訳」を添えてください
-- 説明や余計な挨拶は一切含めず、以下のフォーマットのみで出力してください
-【出力形式】
-パターン1: [翻訳結果1]
-戻し訳1: [簡潔な戻し訳1]
-
-パターン2: [翻訳結果2]
-戻し訳2: [簡潔な戻し訳2]
-【入力】
-{input_text}
-"""
             
-            res, err = call_api_with_retry(model, prompt, st_box)
-        
-        if err: st.error(f"❌ {err}")
-        else:
-            if st.session_state.style == "sns":
-                st.markdown(f'<div class="result-card"><div class="result-header">🌍 SNS Collection</div><div class="result-text">{res}</div></div>', unsafe_allow_html=True)
+        with st.spinner("Processing..."):
+            if st.session_state.style == "prompt_gen":
+                prompt = f"""
+以下のキーワードを元に、3種類の高品質なAIプロンプト（英語）を作成してください。
+説明は不要です。
+【入力】: {input_text}
+【出力形式】
+Midjourney風: /imagine prompt: [詳細な描写, スタイル, ライティング]
+Stable Diffusion風: (masterpiece, best quality, ultra-detailed), [タグ形式の描写], [アーティスト名], --n [ネガティブ]
+System Prompt風: You are a helpful assistant specialized in [分野]. Your task is to [詳細な役割]...
+"""
+            elif st.session_state.style == "sns":
+                prompt = f"""SNS投稿(日・英・仏)を作成。絵文字・タグ付。空行必須。入力: {input_text}"""
             else:
-                # パース処理 (より柔軟に)
-                lines = res.strip().split('\n')
-                p1_t, p1_b, p2_t, p2_b = "", "", "", ""
-                curr = None
-                for line in lines:
-                    if "パターン1" in line: curr = "p1_t"; p1_t = line.split(":", 1)[-1].strip()
-                    elif "戻し訳1" in line: curr = "p1_b"; p1_b = line.split(":", 1)[-1].strip()
-                    elif "パターン2" in line: curr = "p2_t"; p2_t = line.split(":", 1)[-1].strip()
-                    elif "戻し訳2" in line: curr = "p2_b"; p2_b = line.split(":", 1)[-1].strip()
-                    elif curr == "p1_t" and line.strip(): p1_t += "\n" + line
-                    elif curr == "p1_b" and line.strip(): p1_b += "\n" + line
-                    elif curr == "p2_t" and line.strip(): p2_t += "\n" + line
-                    elif curr == "p2_b" and line.strip(): p2_b += "\n" + line
+                tone = "カジュアル" if st.session_state.style == "casual" else "フォーマル"
+                prompt = f"""プロの翻訳者として、{sel_mode}に基づき{tone}な翻訳パターンを2つ、それぞれの戻し訳と共に提示してください。余計な説明は不要。形式:
+パターン1: [翻訳]
+戻し訳1: [訳]
+パターン2: [翻訳]
+戻し訳2: [訳]
+入力: {input_text}"""
+            
+            res, err = call_api(model, prompt)
+            if err:
+                st.error(f"Error: {err}")
+            else:
+                add_history({"input": input_text, "result": res}, is_pro)
+                st.rerun()
 
-                col_a, col_b = st.columns(2)
-                with col_a:
-                    st.markdown(f'<div class="result-card"><div class="result-header">💡 Pattern 1</div><div class="result-text">{p1_t if p1_t else res}</div><div class="pattern-label">🔄 Back Translation</div><div class="result-text" style="font-size:0.9rem; color:#8b949e !important;">{p1_b}</div></div>', unsafe_allow_html=True)
-                with col_b:
-                    if p2_t:
-                        st.markdown(f'<div class="result-card"><div class="result-header">💡 Pattern 2</div><div class="result-text">{p2_t}</div><div class="pattern-label">🔄 Back Translation</div><div class="result-text" style="font-size:0.9rem; color:#8b949e !important;">{p2_b}</div></div>', unsafe_allow_html=True)
+    # --- Results Display ---
+    if st.session_state.history:
+        latest = st.session_state.history[0]
+        st.divider()
+        st.subheader("✨ Latest Result")
+        
+        if latest["style"] == "prompt_gen":
+            st.markdown(f'<div class="result-card"><div class="result-header">🤖 Generated Prompts</div><div class="result-text">{latest["result"]}</div></div>', unsafe_allow_html=True)
+        elif latest["style"] == "sns":
+            st.markdown(f'<div class="result-card"><div class="result-header">🌍 SNS Collection</div><div class="result-text">{latest["result"]}</div></div>', unsafe_allow_html=True)
+        else:
+            # 翻訳パターンの表示
+            res_text = latest["result"]
+            lines = res_text.split('\n')
+            p1_t, p1_b, p2_t, p2_b = "", "", "", ""
+            curr = None
+            for line in lines:
+                if "パターン1" in line: curr = "p1_t"; p1_t = line.split(":", 1)[-1].strip()
+                elif "戻し訳1" in line: curr = "p1_b"; p1_b = line.split(":", 1)[-1].strip()
+                elif "パターン2" in line: curr = "p2_t"; p2_t = line.split(":", 1)[-1].strip()
+                elif "戻し訳2" in line: curr = "p2_b"; p2_b = line.split(":", 1)[-1].strip()
+                elif curr == "p1_t" and line.strip(): p1_t += "\n" + line
+                elif curr == "p1_b" and line.strip(): p1_b += "\n" + line
+                elif curr == "p2_t" and line.strip(): p2_t += "\n" + line
+                elif curr == "p2_b" and line.strip(): p2_b += "\n" + line
+
+            ca, cb = st.columns(2)
+            with ca:
+                st.markdown(f'<div class="result-card"><div class="result-header">💡 Pattern 1</div><div class="result-text">{p1_t if p1_t else res_text}</div><div class="back-trans">🔄 {p1_b}</div></div>', unsafe_allow_html=True)
+            with cb:
+                if p2_t:
+                    st.markdown(f'<div class="result-card"><div class="result-header">💡 Pattern 2</div><div class="result-text">{p2_t}</div><div class="back-trans">🔄 {p2_b}</div></div>', unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()

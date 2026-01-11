@@ -1,7 +1,7 @@
 """
-Jifra 🗼 - Definitive Smart Edition (v4.0)
-=========================================
-Simple. Intuitive. No nonsense.
+Jifra 🗼 - The Definitive Edition (v3.0)
+=======================================
+Masterpiece of Simplicity, Intelligence, and Intuition.
 Tech: Streamlit + Google GenerativeAI (Legacy SDK)
 """
 
@@ -10,6 +10,7 @@ import google.generativeai as genai
 import re
 import time
 import random
+from datetime import datetime
 
 # =============================================================================
 # 1. セキュリティ & 認証
@@ -46,7 +47,7 @@ st.markdown(f"""
     }}
     .main .block-container {{ padding-top: 1.5rem; max-width: 700px; }}
     
-    /* サイドバー */
+    /* サイドバー: 洗練された暗色と高コントラスト */
     [data-testid="stSidebar"] {{
         background-color: #161b22 !important;
         border-right: 1px solid #30363d;
@@ -68,35 +69,34 @@ st.markdown(f"""
         -webkit-background-clip: text; -webkit-text-fill-color: transparent;
         margin-bottom: 2rem;
     }}
+    .subtitle {{ text-align: center; color: #8b949e !important; font-size: 1.1rem; margin-bottom: 2.5rem; }}
     
-    /* インタラクティブ要素: カーソル形状 */
-    div.stButton > button {{
+    /* インタラクティブ要素: カーソル形状変更 */
+    div.stButton > button, .stTextArea textarea, .stSelectbox > div > div {{
         cursor: pointer !important;
-    }}
-    .stTextArea textarea {{
-        cursor: text !important; /* I-beam for typing intuition */
     }}
     
     /* ボタンデザイン */
     div.stButton > button {{
         width: 100%; border-radius: 12px !important; font-weight: 600 !important;
-        height: 3.2rem; transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        height: 3.2rem; transition: 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         border: none !important;
     }}
     div.stButton > button[kind="primary"] {{
         background: linear-gradient(135deg, #ff6b6b 0%, #ee5253 100%) !important;
         color: white !important;
+        box-shadow: 0 4px 15px rgba(255, 107, 107, 0.3);
     }}
     div.stButton > button[kind="secondary"] {{
         background-color: #21262d !important;
         color: #c9d1d9 !important;
         border: 1px solid #30363d !important;
     }}
-    /* 無効ボタンの視覚的表現: より暗く目立たなく */
+    /* 無効ボタンの視覚的表現 */
     div.stButton > button:disabled {{
-        opacity: 0.15 !important;
-        background: #0d1117 !important;
-        color: #30363d !important;
+        opacity: 0.3 !important;
+        background: #161b22 !important;
+        color: #484f58 !important;
         cursor: not-allowed !important;
     }}
 
@@ -104,28 +104,46 @@ st.markdown(f"""
     .stTextArea textarea {{
         background-color: #0d1117 !important;
         border: 2px solid #30363d !important;
-        border-radius: 12px !important;
+        border-radius: 14px !important;
         color: #ffffff !important;
-        font-size: 1.1rem !important;
+        font-size: 1.15rem !important;
         padding: 1rem !important;
     }}
     .stTextArea textarea:focus {{ border-color: #ff6b6b !important; }}
 
-    /* ワンタップコピー (st.code) の洗練 */
-    .stCode {{ border-radius: 10px !important; border: 1px solid #30363d !important; }}
-    code {{ background-color: #161b22 !important; color: #e6edf3 !important; font-size: 1rem !important; }}
+    /* セレクトボックス */
+    .stSelectbox > div > div {{
+        background-color: #161b22 !important;
+        border: 1px solid #30363d !important;
+        border-radius: 10px !important;
+        color: #ffffff !important;
+    }}
+
+    /* 結果表示 (ワンタップコピー機能 st.code 向けの調整) */
+    .stCode {{ border-radius: 12px !important; border: 1px solid #30363d !important; overflow: hidden; }}
+    code {{ background-color: #161b22 !important; font-family: 'Inter', sans-serif !important; }}
     
-    /* 履歴リスト: シンプル化 */
+    /* 結果カード */
+    .res-card {{
+        background: #161b22; border-radius: 14px; border: 1px solid #30363d;
+        padding: 1rem; margin-top: 1rem;
+    }}
+    .res-label {{
+        font-size: 0.75rem; font-weight: 700; color: #8b949e !important;
+        margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.05em;
+    }}
+    
+    /* 履歴リスト */
     .history-item {{
-        padding: 0.4rem 0.6rem; background: #0d1117; border: 1px solid #30363d;
-        border-radius: 6px; margin-bottom: 0.3rem; font-size: 0.85rem; color: #8b949e;
+        padding: 0.5rem 0.8rem; background: #0d1117; border: 1px solid #30363d;
+        border-radius: 8px; margin-bottom: 0.5rem; font-size: 0.9rem; color: #8b949e;
         overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }}
 </style>
 """, unsafe_allow_html=True)
 
 # =============================================================================
-# 4. AI ロジック
+# 4. インテリジェント AI ロジック
 # =============================================================================
 @st.cache_resource
 def get_ai_model():
@@ -133,6 +151,7 @@ def get_ai_model():
         genai.configure(api_key=API_KEY)
         models = [m.name for m in genai.list_models() if "generateContent" in m.supported_generation_methods]
         target = next((m for m in models if "1.5-flash" in m), models[0] if models else None)
+        if not target: return None, "No available models found."
         return genai.GenerativeModel(target), target
     except Exception as e:
         return None, str(e)
@@ -141,16 +160,14 @@ def call_ai(model, prompt):
     max_retries = 3
     for i in range(max_retries):
         try:
-            # 物理的に余計な文章を封印するためのグローバルな制約
-            strict_prompt = f"ANSWER ONLY WITH THE RESULT. NO CHAT, NO INTRODUCTION, NO EXPLANATION.\n\n{prompt}"
-            response = model.generate_content(strict_prompt)
+            response = model.generate_content(prompt)
             return response.text, None
         except Exception as e:
             if "429" in str(e) and i < max_retries - 1:
                 time.sleep((2 ** i) + random.random())
                 continue
             return None, str(e)
-    return None, "Failed."
+    return None, "Connection failed."
 
 def detect_lang(text):
     if re.search(r'[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]', text): return 'JP'
@@ -162,103 +179,105 @@ def detect_lang(text):
 def main():
     model, model_name = get_ai_model()
     
+    # --- Sidebar: Settings & Simplified History ---
     with st.sidebar:
         st.header("⚙️ Settings")
-        pwd = st.text_input("🔑 PRO Password", type="password")
+        pwd = st.text_input("🔑 PRO Key", type="password")
         is_pro = (pwd == PRO_PASSWORD)
-        if is_pro: st.success("PRO Active")
+        if is_pro: st.success("PRO Mode Active")
         
         st.divider()
         st.subheader("📜 History")
         if not st.session_state.history:
-            st.caption("Empty.")
+            st.caption("No history yet.")
         else:
             for h in st.session_state.history:
                 st.markdown(f'<div class="history-item">{h}</div>', unsafe_allow_html=True)
-            if st.button("🗑️ Clear", help="Clear history"):
+            if st.button("🗑️ Clear History"):
                 st.session_state.history = []
                 st.rerun()
 
+    # --- Header ---
     st.markdown('<h1 class="main-title">Jifra 🗼</h1>', unsafe_allow_html=True)
 
-    # --- Mode Selection ---
-    # 日本語名から洗練されたシンボル/表記へ。SNSボタンはPROに復元。
-    modes = ["💬 Casual", "👔 Formal", "✨ PRO", "🎨 Prompt"]
+    # --- Mode Selection (Visual Icons Only) ---
+    tabs_labels = ["💬 Casual", "👔 Formal", "✨ PRO", "🎨 Prompt"]
     style_keys = ["casual", "formal", "sns", "prompt_gen"]
     
     cols = st.columns(4)
-    for i, (label, key) in enumerate(zip(modes, style_keys)):
+    for i, (label, key) in enumerate(zip(tabs_labels, style_keys)):
         with cols[i]:
-            is_locked = (key in ["sns", "prompt_gen"] and not is_pro)
-            if st.button(label, key=f"btn_{key}", type="primary" if st.session_state.style == key else "secondary", disabled=is_locked):
+            # SNSとPromptはPRO専用。無効時は視覚的に判別可能
+            disabled_style = (key in ["sns", "prompt_gen"] and not is_pro)
+            if st.button(label, key=f"btn_{key}", type="primary" if st.session_state.style == key else "secondary", disabled=disabled_style):
                 st.session_state.style = key
                 st.rerun()
 
     st.write("")
     
-    # --- UI Logic based on Mode ---
-    lang = detect_lang(st.session_state.input_text)
-    
+    # --- Intelligent Direction Control ---
     if st.session_state.style == "prompt_gen":
-        guide = "🤖 Keyword ➡ Image Prompt (ENG) + JP Translation" if lang == 'EN/FR' else "🤖 キーワード ➡ 画像プロンプト (英語) + 日本語訳"
-        st.info(guide)
+        guide_txt = "🤖 [Prompt Generator] Keywords to AI Prompt (English)" if detect_lang(st.session_state.input_text) == 'JP' else "🤖 [プロンプト生成] キーワードをAI用プロンプトに変換"
+        st.info(guide_txt)
         sel_mode = "prompt_gen"
     elif st.session_state.style == "sns":
         sel_mode = "sns"
     else:
-        # PROボタン以外では出力言語選択を表示
         dirs = {"auto": "🔄 Auto Detect", "ja_fr": "🇯🇵 日 ➡ 🇫🇷 仏", "fr_ja": "🇫🇷 仏 ➡ 🇯🇵 日"}
         if is_pro:
             dirs.update({"ja_en": "🇯🇵 日 ➡ 🇺🇸 英", "en_ja": "🇺🇸 英 ➡ 🇯🇵 日"})
-        sel_mode = st.selectbox("Dir", options=list(dirs.keys()), format_func=lambda x: dirs[x], label_visibility="collapsed")
+        sel_mode = st.selectbox("Direction", options=list(dirs.keys()), format_func=lambda x: dirs[x], label_visibility="collapsed")
 
-    # --- Input ---
+    # --- Input Area ---
     input_text = st.text_area(
         "Input",
         value=st.session_state.input_text,
-        placeholder="Input text here...",
-        height=140,
+        placeholder="Type here to translate or generate...",
+        height=160,
         label_visibility="collapsed"
     )
 
-    # --- Actions: Paper Plane Icon ---
+    # --- Main Actions ---
+    # 多言語対応のアクションボタン
+    lang = detect_lang(input_text)
+    btn_label = "翻訳・変換する" if lang == 'JP' else "Translate / Generate"
+    
     c_run, c_clear = st.columns([5, 1])
     with c_run:
-        # 紙飛行機アイコンを含むスマートなラベル
-        btn_txt = "✈️ Send" if lang == 'EN/FR' else "✈️ 送信する"
-        run_btn = st.button(btn_txt, type="primary", use_container_width=True)
+        run_btn = st.button(btn_label, type="primary", use_container_width=True)
     with c_clear:
-        if st.button("🗑️", use_container_width=True, help="Reset everything"):
+        if st.button("🗑️", use_container_width=True, help="Clear input and results"):
             st.session_state.input_text = ""
             st.session_state.current_result = None
             st.rerun()
 
-    # --- Execution ---
+    # --- Execution Logic ---
     if run_btn:
         if not input_text.strip(): return
         
         with st.spinner("Processing..."):
             if sel_mode == "prompt_gen":
                 prompt = f"""
-                Convert onto 3 short version PROMPTS in English.
-                Provide Japanese translation (back-translation) for each.
-                [MJ] MJ v6 prompt
-                [SD] Stable Diffusion tag format
-                [SYS] Role-based prompt
+                Convert the following keyword into 3 short, intelligent AI prompts in English.
+                Provide ONLY the code and a simple JP translation for each.
+                [MJ] (MJ version)
+                [SD] (SD version)
+                [SYS] (System prompt version)
                 Input: {input_text}
                 """
             elif sel_mode == "sns":
                 prompt = f"""
-                Convert input into 3 SNS posts: 🇯🇵, 🇺🇸, 🇫🇷.
-                - PURE TRANSLATION/CONVERSION. DO NOT IMAGINE OR ADD FACTS.
-                - Keep it simple: [Icon] [Language Code]
-                - Compact spacing. Tag on new line with single empty line.
+                Convert the input into SLEEK SNS posts for 🇯🇵, 🇺🇸, and 🇫🇷.
+                - NO hallucinations or imaginary facts. 
+                - Emoji + Hashtags included.
+                - Single line language tag (e.g., 🇯🇵 JP).
+                - Proper spacing.
                 Input: {input_text}
                 """
             else:
-                tone = "Casual" if st.session_state.style == 'casual' else "Formal"
+                tone = "Casual and friendly" if st.session_state.style == 'casual' else "Formal and professional"
                 prompt = f"""
-                Translate into {tone} natural phrases ({sel_mode}).
+                Translate the input into {tone} natural phrases ({sel_mode}).
                 Provide 2 variations with simple back-translations in JP.
                 Input: {input_text}
                 """
@@ -269,18 +288,28 @@ def main():
             else:
                 st.session_state.current_result = res
                 st.session_state.input_text = input_text
-                # Clean History (latest content only)
-                h_text = input_text.replace('\n', ' ')[:30]
+                # Update history (content only)
+                h_text = input_text.replace('\n', ' ')[:40]
                 if h_text and (not st.session_state.history or h_text != st.session_state.history[0]):
                     st.session_state.history.insert(0, h_text)
-                    st.session_state.history = st.session_state.history[:10]
+                    st.session_state.history = st.session_state.history[:15]
                 st.rerun()
 
-    # --- Display Result: One-tap Copy ONLY ---
+    # --- Visual Results (One-tap Copy Enabled via st.code) ---
     if st.session_state.current_result:
         st.divider()
-        # 装飾（✨Latest Result等）を一切排除し、ダイレクトに st.code を表示
-        st.code(st.session_state.current_result, language="text")
+        res = st.session_state.current_result
+        
+        if st.session_state.style == "prompt_gen":
+            st.markdown('<p class="res-label">🤖 AI Prompts (Tap code to copy)</p>', unsafe_allow_html=True)
+            st.code(res, language="text")
+        elif st.session_state.style == "sns":
+            st.markdown('<p class="res-label">🌍 SNS Collection (Tap to copy)</p>', unsafe_allow_html=True)
+            st.code(res, language="text")
+        else:
+            # 翻訳結果のスマートな表示
+            st.markdown(f'<p class="res-label">💡 {st.session_state.style.upper()} Result (Tap to copy)</p>', unsafe_allow_html=True)
+            st.code(res, language="text")
 
 if __name__ == "__main__":
     main()

@@ -91,11 +91,11 @@ st.markdown("""
         border: 2px solid #ff6b6b !important;
     }
     div.stButton > button:disabled { 
-        opacity: 0.25 !important; 
+        opacity: 0.4 !important; 
         cursor: not-allowed !important; 
-        border-color: #30363d !important;
-        color: #484f58 !important;
-        background-color: #161b22 !important;
+        border-color: #484f58 !important;
+        color: #6e7681 !important;
+        background-color: #21262d !important;
     }
     
     .stTextArea textarea { 
@@ -265,17 +265,16 @@ def main():
                 
                 # アイコンでピン表示
                 if is_pro:
-                    pin_icon = "📌" if is_pinned else "📍"
                     col1, col2 = st.columns([6, 1])
                     with col1:
                         st.markdown(f'<div class="{css}">{h["text"]}...</div>', unsafe_allow_html=True)
                     with col2:
                         if is_pinned:
-                            if st.button(pin_icon, key=f"u_{h['id']}", help="Unpin"):
+                            if st.button("📌", key=f"u_{h['id']}", help="Unpin"):
                                 h["pinned"] = False
                                 st.rerun()
                         elif pinned_count < 5:
-                            if st.button(pin_icon, key=f"p_{h['id']}", help="Pin"):
+                            if st.button("☆", key=f"p_{h['id']}", help="Pin"):
                                 h["pinned"] = True
                                 st.rerun()
                 else:
@@ -327,12 +326,26 @@ def main():
     # 入力欄
     input_text = st.text_area("", value=st.session_state.input_text, height=160, placeholder="Input text...", label_visibility="collapsed")
     
-    # 言語選択（翻訳モード時のみ）
+    # 言語選択（翻訳モード時のみ）- ラジオボタン
     if st.session_state.style not in ['sns', 'prompt']:
-        opts = {"🇯🇵 Japanese": "ja", "🇫🇷 French": "fr"}
-        if is_pro: opts["🇺🇸 English"] = "en"
-        sel_lang = st.selectbox("Output", options=list(opts.keys()), format_func=lambda x: x, label_visibility="collapsed")
-        sel_lang = opts[sel_lang]
+        opts = ["ja", "fr"]
+        if is_pro: opts.append("en")
+        
+        format_map = {"ja": "➡JP", "fr": "➡FR", "en": "➡EN"}
+        
+        # デフォルト設定
+        if 'sel_lang' not in st.session_state: st.session_state.sel_lang = 'fr'
+        if st.session_state.sel_lang not in opts: st.session_state.sel_lang = opts[0]
+            
+        sel_lang = st.radio(
+            "Output", 
+            options=opts, 
+            format_func=lambda x: format_map[x], 
+            horizontal=True, 
+            label_visibility="collapsed",
+            index=opts.index(st.session_state.sel_lang)
+        )
+        st.session_state.sel_lang = sel_lang
     else:
         sel_lang = None
 
@@ -368,11 +381,10 @@ Output the English prompt first, then the Japanese back-translation in parenthes
 
 {input_text}"""
                 elif level == 2:
-                    # ★★ Creative: 豊かな表現
+                    # ★★ Creative: 豊かな表現（短め）
                     prompt = f"""{STRICT}
-Create a rich, narrative image generation prompt from this keyword.
-Add atmosphere, mood, and artistic elements.
-Output the English prompt first, then the Japanese back-translation in parentheses on a NEW LINE.
+Create a concise image prompt with atmosphere and mood. Keep it under 30 words.
+Output English first, then Japanese translation in parentheses on a NEW LINE.
 
 {input_text}"""
                 else:

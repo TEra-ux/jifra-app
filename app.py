@@ -1,5 +1,5 @@
 """
-Jifra 🗼 - AI Smart Translator (Enhanced Edition v8)
+Jifra 🗼 - AI Smart Translator (Enhanced Edition v9)
 ====================================================
 Features: Translation, SNS, Prompt Generation (Star Rating System), History, Pin
 Tech: Streamlit + Google GenerativeAI (Legacy SDK)
@@ -144,20 +144,39 @@ st.markdown("""
     }
     .back-trans { color: #8b949e !important; font-size: 0.9rem; margin-bottom: 1rem; padding-left: 0.5rem; }
     
-    .history-text { 
-        padding: 0.4rem 0.6rem; background: #0d1117; border: 1px solid #30363d;
-        border-radius: 6px; font-size: 0.8rem; color: #8b949e;
-        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    /* 履歴: よりコンパクトで見やすく */
+    .history-row {
+        display: flex;
+        align-items: center;
+        padding: 0.4rem 0.5rem;
+        background: #0d1117;
+        border: 1px solid #30363d;
+        border-radius: 6px;
+        margin-bottom: 0.3rem;
+        gap: 0.5rem;
     }
-    .history-pinned { border-left: 3px solid #f1c40f !important; }
+    .history-row.pinned {
+        border-left: 3px solid #f1c40f !important;
+    }
+    .history-text {
+        flex: 1;
+        font-size: 0.8rem;
+        color: #8b949e;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .history-pin {
+        font-size: 0.9rem;
+        cursor: pointer;
+        color: #f1c40f !important;
+    }
     
     .stCode button {
         background-color: #ff6b6b !important;
         color: white !important;
-        border: none !important;
     }
     
-    /* 星評価ボタン */
     .star-desc {
         font-size: 0.75rem;
         color: #8b949e !important;
@@ -195,10 +214,21 @@ def call_api(model, prompt):
     return None, "Error"
 
 # =============================================================================
-# 5. 履歴管理
+# 5. 履歴管理（生成後の言葉を保存）
 # =============================================================================
-def add_history(input_text, result, is_pro):
-    st.session_state.history.insert(0, {"id": time.time(), "input": input_text[:25], "result": result, "pinned": False})
+def add_history(result, is_pro):
+    # 生成後の最初の有効な行を抽出
+    lines = result.strip().split('\n')
+    summary = ""
+    for line in lines:
+        line = line.strip()
+        if line and not line.startswith('(') and not line.endswith(':') and len(line) > 5:
+            summary = line[:35]
+            break
+    if not summary:
+        summary = result[:35]
+    
+    st.session_state.history.insert(0, {"id": time.time(), "text": summary, "result": result, "pinned": False})
     if not is_pro:
         st.session_state.history = st.session_state.history[:1]
     else:
@@ -225,20 +255,26 @@ def main():
         else:
             pinned_count = sum(1 for h in st.session_state.history if h.get("pinned"))
             for h in st.session_state.history:
-                cols = st.columns([6, 1])
+                is_pinned = h.get("pinned", False)
+                row_class = "history-row pinned" if is_pinned else "history-row"
+                
+                # ピンボタンを目立たせる
+                pin_icon = "⭐" if is_pinned else "☆"
+                
+                cols = st.columns([5, 1])
                 with cols[0]:
-                    css = "history-text history-pinned" if h.get("pinned") else "history-text"
-                    st.markdown(f'<div class="{css}">{h["input"]}...</div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="history-text">{h["text"]}...</div>', unsafe_allow_html=True)
                 with cols[1]:
                     if is_pro:
-                        if h.get("pinned"):
-                            if st.button("★", key=f"u_{h['id']}", help="Unpin"):
+                        if is_pinned:
+                            if st.button("⭐", key=f"u_{h['id']}", help="Unpin"):
                                 h["pinned"] = False
                                 st.rerun()
                         elif pinned_count < 5:
                             if st.button("☆", key=f"p_{h['id']}", help="Pin"):
                                 h["pinned"] = True
                                 st.rerun()
+            
             if st.button("🗑️ Clear"):
                 st.session_state.history = [h for h in st.session_state.history if h.get("pinned")]
                 st.rerun()
@@ -263,31 +299,32 @@ def main():
     
     # プロンプトモード: 星評価システム
     if st.session_state.style == 'prompt':
-        st.markdown("**Select Prompt Level:**")
+        st.markdown("**Select Level:**")
         p1, p2, p3 = st.columns(3)
         
         def set_level(lv): st.session_state.prompt_level = lv
         
         with p1:
             st.button("★", on_click=set_level, args=(1,), type="primary" if st.session_state.prompt_level==1 else "secondary", use_container_width=True)
-            st.markdown('<p class="star-desc">Standard Chat<br>(Gemini, ChatGPT)</p>', unsafe_allow_html=True)
+            st.markdown('<p class="star-desc">Standard Chat</p>', unsafe_allow_html=True)
         with p2:
             st.button("★★", on_click=set_level, args=(2,), type="primary" if st.session_state.prompt_level==2 else "secondary", use_container_width=True, disabled=not is_pro)
-            st.markdown('<p class="star-desc">System Role<br>(Nano Banana)</p>', unsafe_allow_html=True)
+            st.markdown('<p class="star-desc">System Role</p>', unsafe_allow_html=True)
         with p3:
             st.button("★★★", on_click=set_level, args=(3,), type="primary" if st.session_state.prompt_level==3 else "secondary", use_container_width=True, disabled=not is_pro)
-            st.markdown('<p class="star-desc">Visual Prompt<br>(SD, Midjourney)</p>', unsafe_allow_html=True)
-        
-        sel_lang = None
-    elif st.session_state.style not in ['sns']:
+            st.markdown('<p class="star-desc">Visual Prompt</p>', unsafe_allow_html=True)
+
+    # 入力欄
+    input_text = st.text_area("", value=st.session_state.input_text, height=160, placeholder="Input text...", label_visibility="collapsed")
+    
+    # 言語選択（入力欄の下に配置）
+    if st.session_state.style not in ['sns', 'prompt']:
         opts = {"🇯🇵 Japanese": "ja", "🇫🇷 French": "fr"}
         if is_pro: opts["🇺🇸 English"] = "en"
-        target_lang = st.selectbox("Output", options=list(opts.keys()), label_visibility="collapsed")
-        sel_lang = opts[target_lang]
+        sel_lang = st.selectbox("Output", options=list(opts.keys()), format_func=lambda x: x, label_visibility="collapsed")
+        sel_lang = opts[sel_lang]
     else:
         sel_lang = None
-
-    input_text = st.text_area("", value=st.session_state.input_text, height=160, placeholder="Input text...", label_visibility="collapsed")
 
     col_run, col_clear = st.columns([5, 1])
     with col_run:
@@ -300,64 +337,53 @@ def main():
 
     if run_btn and input_text.strip():
         with st.spinner("⏳ Generating..."):
-            STRICT = "OUTPUT ONLY THE RESULT. NO INTRO. NO CHAT. NO LABELS."
+            STRICT = "OUTPUT ONLY THE RESULT. NO INTRO. NO CHAT. NO AI NAME MENTIONS LIKE 'You are X'."
             
             if st.session_state.style == "prompt":
                 level = st.session_state.prompt_level
                 
                 if level == 1:
-                    # ★ Standard Chat
                     prompt = f"""{STRICT}
-Create 3 optimized chat prompts from the keyword for daily conversation with AI assistants.
-Target: Gemini, ChatGPT, Copilot
+Create 3 optimized chat prompts from the keyword for daily conversation.
 Add Japanese translation in parentheses after each.
+Do NOT include phrases like "You are..." or AI names in the output.
 
-Gemini:
-[optimized prompt]
+[prompt 1]
 (日本語)
 
-ChatGPT:
-[optimized prompt]
+[prompt 2]
 (日本語)
 
-Copilot:
-[optimized prompt]
+[prompt 3]
 (日本語)
 
 Keyword: {input_text}"""
                 elif level == 2:
-                    # ★★ System Role
                     prompt = f"""{STRICT}
-Create 2 advanced system role prompts that give AI a specific persona or constraints.
-Target: Nano Banana, Custom GPT
+Create 2 advanced system role prompts that define behavior and constraints.
 Add Japanese translation in parentheses after each.
+Do NOT include phrases like "You are..." or any AI names. Make it generic and reusable.
 
-Nano Banana:
-[system role prompt with persona/constraints]
+[system prompt 1]
 (日本語)
 
-Custom GPT:
-[system role prompt with persona/constraints]
+[system prompt 2]
 (日本語)
 
 Keyword: {input_text}"""
                 else:
-                    # ★★★ Visual Prompt
                     prompt = f"""{STRICT}
 Create 3 powerful image generation prompts with detailed style, lighting, and composition.
-Target: Stable Diffusion, Midjourney, Adobe Firefly
 Add Japanese translation in parentheses after each.
+Do NOT include AI names. Output only the visual description.
 
-Stable Diffusion:
-[detailed visual prompt]
+[visual prompt 1]
 (日本語)
 
-Midjourney:
-[detailed visual prompt]
+[visual prompt 2]
 (日本語)
 
-Adobe Firefly:
-[detailed visual prompt]
+[visual prompt 3]
 (日本語)
 
 Keyword: {input_text}"""
@@ -383,12 +409,13 @@ Input: {input_text}"""
                 prompt = f"""{STRICT}
 Translate to {lang_name} in {tone} tone. 
 Give 2 variations. Add Japanese back-translation in parentheses after each.
+Do NOT output any labels like [translation 1]. Just output the text directly.
 
-[translation 1]
-(japanese)
+First variation
+(日本語)
 
-[translation 2]
-(japanese)
+Second variation
+(日本語)
 
 Input: {input_text}"""
             
@@ -399,7 +426,7 @@ Input: {input_text}"""
         else:
             st.session_state.current_result = {"raw": res, "style": st.session_state.style}
             st.session_state.input_text = input_text
-            add_history(input_text, res, is_pro)
+            add_history(res, is_pro)
             st.rerun()
 
     # 結果表示
@@ -421,7 +448,7 @@ Input: {input_text}"""
                     blocks.append(current_block)
                     current_block = {"text": "", "back": "", "label": ""}
                 label = line[:4]
-                current_block["label"] = {"[JP]": "🇯🇵 JP", "[EN]": "🇺🇸 EN", "[FR]": "🇫🇷 FR"}.get(label, label)
+                current_block["label"] = {"[JP]": "JP", "[EN]": "EN", "[FR]": "FR"}.get(label, label)
                 current_block["text"] = line[4:].strip()
                 continue
             
@@ -430,10 +457,10 @@ Input: {input_text}"""
                 if current_block["text"]:
                     blocks.append(current_block)
                     current_block = {"text": "", "back": "", "label": ""}
-            elif line.endswith(':') and len(line) < 25:
+            elif line.startswith('[') and line.endswith(']'):
                 if current_block["text"]:
                     blocks.append(current_block)
-                current_block = {"text": "", "back": "", "label": line[:-1]}
+                current_block = {"text": "", "back": "", "label": ""}
             else:
                 if current_block["text"]:
                     current_block["text"] += "\n" + line

@@ -1,8 +1,8 @@
 """
-Jifra 🗼 - The Definitive Edition (v3.0)
-=======================================
-Masterpiece of Simplicity, Intelligence, and Intuition.
+Jifra 🗼 - AI Smart Translator (Original Stable Edition)
+========================================================
 Tech: Streamlit + Google GenerativeAI (Legacy SDK)
+Features: Translation Only (No Prompt Generation Mode)
 """
 
 import streamlit as st
@@ -10,306 +10,223 @@ import google.generativeai as genai
 import re
 import time
 import random
-from datetime import datetime
 
 # =============================================================================
-# 1. セキュリティ & 認証
+# 1. 認証設定 (Streamlit Secrets)
 # =============================================================================
 try:
-    API_KEY = st.secrets["GEMINI_API_KEY"]
-    PRO_PASSWORD = st.secrets["PRO_PASSWORD"]
+    API_KEY = st.secrets["gemini_api_key"]
+    PRO_PASSWORD = st.secrets["pro_password"]
 except KeyError:
-    try:
-        API_KEY = st.secrets["gemini_api_key"]
-        PRO_PASSWORD = st.secrets["pro_password"]
-    except KeyError:
-        st.error("❌ KEY Error: 'GEMINI_API_KEY' or 'PRO_PASSWORD' not found in Secrets.")
-        st.stop()
+    st.error("❌ Streamlit Secrets 'gemini_api_key' or 'pro_password' not found.")
+    st.stop()
 
 # =============================================================================
-# 2. ページ基本設定 & Session State
+# 2. ページ基本設定
 # =============================================================================
-st.set_page_config(page_title="Jifra 🗼", page_icon="🗼", layout="centered")
+st.set_page_config(
+    page_title="Jifra 🗼",
+    page_icon="🗼",
+    layout="centered"
+)
 
-if 'history' not in st.session_state: st.session_state.history = []
-if 'style' not in st.session_state: st.session_state.style = 'casual'
-if 'input_text' not in st.session_state: st.session_state.input_text = ""
-if 'current_result' not in st.session_state: st.session_state.current_result = None
-
 # =============================================================================
-# 3. 究極の洗練デザイン (CSS)
+# 3. カスタムデザイン (黒背景・高級感)
 # =============================================================================
-st.markdown(f"""
+st.markdown("""
 <style>
-    /* ベースカラー */
-    .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {{
+    .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
         background-color: #0d1117 !important;
-    }}
-    .main .block-container {{ padding-top: 1.5rem; max-width: 700px; }}
+    }
+    .main .block-container { padding-top: 2rem; max-width: 700px; }
     
-    /* サイドバー: 洗練された暗色と高コントラスト */
-    [data-testid="stSidebar"] {{
+    [data-testid="stSidebar"] {
         background-color: #161b22 !important;
         border-right: 1px solid #30363d;
-    }}
-    [data-testid="stSidebar"] * {{ color: #e6edf3 !important; }}
-    [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2 {{ color: #ffffff !important; }}
-    [data-testid="stSidebar"] .stTextInput input {{
+    }
+    [data-testid="stSidebar"] * { color: #e6edf3 !important; }
+    [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2 { color: #ffffff !important; }
+    [data-testid="stSidebar"] .stTextInput input {
         background-color: #0d1117 !important;
         color: #ffffff !important;
         border: 1px solid #30363d !important;
-    }}
+    }
 
-    /* テキストスタイル */
-    .stApp p, .stApp span, .stApp label, .stApp div {{ color: #f0f6fc !important; }}
-    h1, h2, h3, h4, h5, h6 {{ color: #ffffff !important; font-weight: 700 !important; }}
-    .main-title {{
-        text-align: center; font-size: 3.2rem; font-weight: 800;
+    .stApp p, .stApp span, .stApp label, .stApp div { color: #f0f6fc !important; }
+    h1, h2, h3, h4, h5, h6 { color: #ffffff !important; }
+    .main-title {
+        text-align: center; font-size: 3.5rem; font-weight: 800;
         background: linear-gradient(90deg, #ff6b6b, #ff8e53);
         -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-        margin-bottom: 2rem;
-    }}
-    .subtitle {{ text-align: center; color: #8b949e !important; font-size: 1.1rem; margin-bottom: 2.5rem; }}
+        margin-bottom: 0.2rem;
+    }
+    .subtitle { text-align: center; color: #8b949e !important; font-size: 1.1rem; margin-bottom: 2.5rem; }
+    .stSelectbox > div > div { background-color: #161b22 !important; border: 1px solid #30363d !important; color: #ffffff !important; }
+    div.stButton > button { width: 100%; border-radius: 10px !important; font-weight: 600 !important; border: none !important; height: 3rem; }
+    div.stButton > button[kind="primary"] { background: linear-gradient(135deg, #ff6b6b 0%, #ee5253 100%) !important; color: white !important; }
+    div.stButton > button[kind="secondary"] { background-color: #21262d !important; color: #c9d1d9 !important; border: 1px solid #30363d !important; }
+    .stTextArea textarea { background-color: #0d1117 !important; border: 2px solid #30363d !important; border-radius: 12px !important; color: #ffffff !important; font-size: 1.1rem !important; }
     
-    /* インタラクティブ要素: カーソル形状変更 */
-    div.stButton > button, .stTextArea textarea, .stSelectbox > div > div {{
-        cursor: pointer !important;
-    }}
-    
-    /* ボタンデザイン */
-    div.stButton > button {{
-        width: 100%; border-radius: 12px !important; font-weight: 600 !important;
-        height: 3.2rem; transition: 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-        border: none !important;
-    }}
-    div.stButton > button[kind="primary"] {{
-        background: linear-gradient(135deg, #ff6b6b 0%, #ee5253 100%) !important;
-        color: white !important;
-        box-shadow: 0 4px 15px rgba(255, 107, 107, 0.3);
-    }}
-    div.stButton > button[kind="secondary"] {{
-        background-color: #21262d !important;
-        color: #c9d1d9 !important;
-        border: 1px solid #30363d !important;
-    }}
-    /* 無効ボタンの視覚的表現 */
-    div.stButton > button:disabled {{
-        opacity: 0.3 !important;
-        background: #161b22 !important;
-        color: #484f58 !important;
-        cursor: not-allowed !important;
-    }}
-
-    /* 入力欄 */
-    .stTextArea textarea {{
-        background-color: #0d1117 !important;
-        border: 2px solid #30363d !important;
-        border-radius: 14px !important;
-        color: #ffffff !important;
-        font-size: 1.15rem !important;
-        padding: 1rem !important;
-    }}
-    .stTextArea textarea:focus {{ border-color: #ff6b6b !important; }}
-
-    /* セレクトボックス */
-    .stSelectbox > div > div {{
-        background-color: #161b22 !important;
-        border: 1px solid #30363d !important;
-        border-radius: 10px !important;
-        color: #ffffff !important;
-    }}
-
-    /* 結果表示 (ワンタップコピー機能 st.code 向けの調整) */
-    .stCode {{ border-radius: 12px !important; border: 1px solid #30363d !important; overflow: hidden; }}
-    code {{ background-color: #161b22 !important; font-family: 'Inter', sans-serif !important; }}
-    
-    /* 結果カード */
-    .res-card {{
-        background: #161b22; border-radius: 14px; border: 1px solid #30363d;
-        padding: 1rem; margin-top: 1rem;
-    }}
-    .res-label {{
-        font-size: 0.75rem; font-weight: 700; color: #8b949e !important;
-        margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.05em;
-    }}
-    
-    /* 履歴リスト */
-    .history-item {{
-        padding: 0.5rem 0.8rem; background: #0d1117; border: 1px solid #30363d;
-        border-radius: 8px; margin-bottom: 0.5rem; font-size: 0.9rem; color: #8b949e;
-        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    }}
+    .result-card { background-color: #161b22; border: 1px solid #30363d; border-left: 5px solid #ff6b6b; border-radius: 12px; padding: 1.2rem; margin-top: 1rem; }
+    .result-header { color: #ff6b6b !important; font-size: 0.75rem; font-weight: 700; margin-bottom: 0.4rem; text-transform: uppercase; }
+    .result-text { color: #e6edf3 !important; font-size: 1.05rem; line-height: 1.5; white-space: pre-wrap; }
+    .pattern-label { color: #8b949e !important; font-size: 0.8rem; margin-top: 0.8rem; border-top: 1px solid #30363d; padding-top: 0.5rem; }
 </style>
 """, unsafe_allow_html=True)
 
 # =============================================================================
-# 4. インテリジェント AI ロジック
+# 4. モデル初期化
 # =============================================================================
 @st.cache_resource
-def get_ai_model():
+def init_stable_model():
     try:
         genai.configure(api_key=API_KEY)
-        models = [m.name for m in genai.list_models() if "generateContent" in m.supported_generation_methods]
-        target = next((m for m in models if "1.5-flash" in m), models[0] if models else None)
-        if not target: return None, "No available models found."
+        
+        available = []
+        try:
+            for m in genai.list_models():
+                if 'generateContent' in m.supported_generation_methods:
+                    available.append(m.name)
+        except:
+            pass
+
+        priority = ["models/gemini-1.5-flash", "models/gemini-pro", "models/gemini-1.0-pro"]
+        target = None
+        for p in priority:
+            if p in available:
+                target = p
+                break
+        if not target:
+            target = available[0] if available else "models/gemini-1.5-flash"
         return genai.GenerativeModel(target), target
     except Exception as e:
         return None, str(e)
 
-def call_ai(model, prompt):
+def call_api(model, prompt):
     max_retries = 3
     for i in range(max_retries):
         try:
             response = model.generate_content(prompt)
             return response.text, None
         except Exception as e:
-            if "429" in str(e) and i < max_retries - 1:
-                time.sleep((2 ** i) + random.random())
-                continue
-            return None, str(e)
-    return None, "Connection failed."
+            err = str(e)
+            if "429" in err or "ResourceExhausted" in err:
+                if i < max_retries - 1:
+                    time.sleep((2 ** i) + random.random())
+                    continue
+            return None, err
+    return None, "Error"
 
-def detect_lang(text):
-    if re.search(r'[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]', text): return 'JP'
-    return 'EN/FR'
+def simple_detect(text):
+    if re.search(r'[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]', text): return 'ja'
+    if re.search(r'[àâäéèêëïîôùûüçœæ]', text): return 'fr'
+    return 'en'
 
 # =============================================================================
-# 5. アプリケーション本体
+# 5. メインUI
 # =============================================================================
 def main():
-    model, model_name = get_ai_model()
+    if 'style' not in st.session_state: st.session_state.style = 'casual'
     
-    # --- Sidebar: Settings & Simplified History ---
+    model, model_name = init_stable_model()
+
     with st.sidebar:
         st.header("⚙️ Settings")
-        pwd = st.text_input("🔑 PRO Key", type="password")
-        is_pro = (pwd == PRO_PASSWORD)
-        if is_pro: st.success("PRO Mode Active")
-        
+        p_input = st.text_input("🔑 PRO Password", type="password")
+        is_pro = (p_input == PRO_PASSWORD)
+        if is_pro: st.success("✨ PRO Activated")
         st.divider()
-        st.subheader("📜 History")
-        if not st.session_state.history:
-            st.caption("No history yet.")
-        else:
-            for h in st.session_state.history:
-                st.markdown(f'<div class="history-item">{h}</div>', unsafe_allow_html=True)
-            if st.button("🗑️ Clear History"):
-                st.session_state.history = []
-                st.rerun()
+        st.caption(f"Connected: {model_name}")
 
-    # --- Header ---
     st.markdown('<h1 class="main-title">Jifra 🗼</h1>', unsafe_allow_html=True)
+    st.markdown('<p class="subtitle">Premium AI Smart Translator</p>', unsafe_allow_html=True)
 
-    # --- Mode Selection (Visual Icons Only) ---
-    tabs_labels = ["💬 Casual", "👔 Formal", "✨ PRO", "🎨 Prompt"]
-    style_keys = ["casual", "formal", "sns", "prompt_gen"]
-    
-    cols = st.columns(4)
-    for i, (label, key) in enumerate(zip(tabs_labels, style_keys)):
-        with cols[i]:
-            # SNSとPromptはPRO専用。無効時は視覚的に判別可能
-            disabled_style = (key in ["sns", "prompt_gen"] and not is_pro)
-            if st.button(label, key=f"btn_{key}", type="primary" if st.session_state.style == key else "secondary", disabled=disabled_style):
-                st.session_state.style = key
-                st.rerun()
+    # スタイル選択ボタン (3つのみ: Casual, Formal, SNS)
+    c1, c2, c3 = st.columns(3)
+    def set_s(s): st.session_state.style = s
+    with c1: st.button("💬 Casual", on_click=set_s, args=('casual',), type="primary" if st.session_state.style=='casual' else "secondary", use_container_width=True)
+    with c2: st.button("👔 Formal", on_click=set_s, args=('formal',), type="primary" if st.session_state.style=='formal' else "secondary", use_container_width=True)
+    with c3: st.button("📱 SNS [PRO]", on_click=set_s, args=('sns',), type="primary" if st.session_state.style=='sns' else "secondary", use_container_width=True, disabled=not is_pro)
 
     st.write("")
     
-    # --- Intelligent Direction Control ---
-    if st.session_state.style == "prompt_gen":
-        guide_txt = "🤖 [Prompt Generator] Keywords to AI Prompt (English)" if detect_lang(st.session_state.input_text) == 'JP' else "🤖 [プロンプト生成] キーワードをAI用プロンプトに変換"
-        st.info(guide_txt)
-        sel_mode = "prompt_gen"
-    elif st.session_state.style == "sns":
-        sel_mode = "sns"
-    else:
-        dirs = {"auto": "🔄 Auto Detect", "ja_fr": "🇯🇵 日 ➡ 🇫🇷 仏", "fr_ja": "🇫🇷 仏 ➡ 🇯🇵 日"}
-        if is_pro:
-            dirs.update({"ja_en": "🇯🇵 日 ➡ 🇺🇸 英", "en_ja": "🇺🇸 英 ➡ 🇯🇵 日"})
-        sel_mode = st.selectbox("Direction", options=list(dirs.keys()), format_func=lambda x: dirs[x], label_visibility="collapsed")
-
-    # --- Input Area ---
-    input_text = st.text_area(
-        "Input",
-        value=st.session_state.input_text,
-        placeholder="Type here to translate or generate...",
-        height=160,
-        label_visibility="collapsed"
-    )
-
-    # --- Main Actions ---
-    # 多言語対応のアクションボタン
-    lang = detect_lang(input_text)
-    btn_label = "翻訳・変換する" if lang == 'JP' else "Translate / Generate"
+    # 言語選択
+    opts = {"auto": "🔄 自動検知 / Auto Detect", "ja_fr": "🇯🇵 日 ➡ 🇫🇷 仏", "fr_ja": "🇫🇷 仏 ➡ 🇯🇵 日"}
+    if is_pro: opts.update({"ja_en": "🇯🇵 日 ➡ 🇺🇸 英", "en_ja": "🇺🇸 英 ➡ 🇯🇵 日"})
+    sel_mode = st.selectbox("Dir", options=list(opts.keys()), format_func=lambda x: opts[x], label_visibility="collapsed")
     
-    c_run, c_clear = st.columns([5, 1])
-    with c_run:
-        run_btn = st.button(btn_label, type="primary", use_container_width=True)
-    with c_clear:
-        if st.button("🗑️", use_container_width=True, help="Clear input and results"):
-            st.session_state.input_text = ""
-            st.session_state.current_result = None
-            st.rerun()
+    input_text = st.text_area("Input", height=180, placeholder="テキストを入力...", label_visibility="collapsed")
 
-    # --- Execution Logic ---
-    if run_btn:
+    if st.button("翻訳する / Translate", type="primary", use_container_width=True):
         if not input_text.strip(): return
-        
-        with st.spinner("Processing..."):
-            if sel_mode == "prompt_gen":
-                prompt = f"""
-                Convert the following keyword into 3 short, intelligent AI prompts in English.
-                Provide ONLY the code and a simple JP translation for each.
-                [MJ] (MJ version)
-                [SD] (SD version)
-                [SYS] (System prompt version)
-                Input: {input_text}
-                """
-            elif sel_mode == "sns":
-                prompt = f"""
-                Convert the input into SLEEK SNS posts for 🇯🇵, 🇺🇸, and 🇫🇷.
-                - NO hallucinations or imaginary facts. 
-                - Emoji + Hashtags included.
-                - Single line language tag (e.g., 🇯🇵 JP).
-                - Proper spacing.
-                Input: {input_text}
-                """
-            else:
-                tone = "Casual and friendly" if st.session_state.style == 'casual' else "Formal and professional"
-                prompt = f"""
-                Translate the input into {tone} natural phrases ({sel_mode}).
-                Provide 2 variations with simple back-translations in JP.
-                Input: {input_text}
-                """
-            
-            res, err = call_ai(model, prompt)
-            if err:
-                st.error(f"❌ Error: {err}")
-            else:
-                st.session_state.current_result = res
-                st.session_state.input_text = input_text
-                # Update history (content only)
-                h_text = input_text.replace('\n', ' ')[:40]
-                if h_text and (not st.session_state.history or h_text != st.session_state.history[0]):
-                    st.session_state.history.insert(0, h_text)
-                    st.session_state.history = st.session_state.history[:15]
-                st.rerun()
+        if not is_pro and sel_mode == "auto" and simple_detect(input_text) == 'en':
+            st.error("🔒 PRO機能です。")
+            return
 
-    # --- Visual Results (One-tap Copy Enabled via st.code) ---
-    if st.session_state.current_result:
-        st.divider()
-        res = st.session_state.current_result
+        with st.spinner("AI処理中..."):
+            if st.session_state.style == "sns":
+                prompt = f"""以下のテキストを元に、日・英・仏の3言語でSNS投稿を作成してください。
+- 各言語に絵文字とハッシュタグを入れる
+- 本文とハッシュタグの間に空行を入れる
+- 説明は不要
+
+🇯🇵 日本語:
+[本文]
+
+#タグ
+
+🇺🇸 English:
+[Body]
+
+#Hashtags
+
+🇫🇷 Français:
+[Corps]
+
+#Hashtags
+
+入力: {input_text}"""
+            else:
+                tone = "カジュアル" if st.session_state.style == 'casual' else "フォーマル"
+                prompt = f"""プロの翻訳者として、{tone}なトーンで翻訳してください。
+- 2つのパターンを提示
+- 各パターンに戻し訳を添える
+- 説明は不要
+
+パターン1: [翻訳]
+戻し訳1: [日本語]
+
+パターン2: [翻訳]
+戻し訳2: [日本語]
+
+入力: {input_text}"""
+            
+            res, err = call_api(model, prompt)
         
-        if st.session_state.style == "prompt_gen":
-            st.markdown('<p class="res-label">🤖 AI Prompts (Tap code to copy)</p>', unsafe_allow_html=True)
-            st.code(res, language="text")
-        elif st.session_state.style == "sns":
-            st.markdown('<p class="res-label">🌍 SNS Collection (Tap to copy)</p>', unsafe_allow_html=True)
-            st.code(res, language="text")
+        if err: st.error(f"❌ {err}")
         else:
-            # 翻訳結果のスマートな表示
-            st.markdown(f'<p class="res-label">💡 {st.session_state.style.upper()} Result (Tap to copy)</p>', unsafe_allow_html=True)
-            st.code(res, language="text")
+            if st.session_state.style == "sns":
+                st.markdown(f'<div class="result-card"><div class="result-header">🌍 SNS Collection</div><div class="result-text">{res}</div></div>', unsafe_allow_html=True)
+            else:
+                lines = res.strip().split('\n')
+                p1_t, p1_b, p2_t, p2_b = "", "", "", ""
+                curr = None
+                for line in lines:
+                    if "パターン1" in line: curr = "p1_t"; p1_t = line.split(":", 1)[-1].strip()
+                    elif "戻し訳1" in line: curr = "p1_b"; p1_b = line.split(":", 1)[-1].strip()
+                    elif "パターン2" in line: curr = "p2_t"; p2_t = line.split(":", 1)[-1].strip()
+                    elif "戻し訳2" in line: curr = "p2_b"; p2_b = line.split(":", 1)[-1].strip()
+                    elif curr == "p1_t" and line.strip(): p1_t += "\n" + line
+                    elif curr == "p1_b" and line.strip(): p1_b += "\n" + line
+                    elif curr == "p2_t" and line.strip(): p2_t += "\n" + line
+                    elif curr == "p2_b" and line.strip(): p2_b += "\n" + line
+
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    st.markdown(f'<div class="result-card"><div class="result-header">💡 Pattern 1</div><div class="result-text">{p1_t if p1_t else res}</div><div class="pattern-label">🔄 Back Translation</div><div class="result-text" style="font-size:0.9rem; color:#8b949e !important;">{p1_b}</div></div>', unsafe_allow_html=True)
+                with col_b:
+                    if p2_t:
+                        st.markdown(f'<div class="result-card"><div class="result-header">💡 Pattern 2</div><div class="result-text">{p2_t}</div><div class="pattern-label">🔄 Back Translation</div><div class="result-text" style="font-size:0.9rem; color:#8b949e !important;">{p2_b}</div></div>', unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()

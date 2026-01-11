@@ -223,15 +223,22 @@ def call_api(model, prompt):
 # 5. 履歴管理
 # =============================================================================
 def add_history(result, is_pro):
+    # 生成された文（最初の有効な翻訳結果）を抽出
     lines = result.strip().split('\n')
     summary = ""
     for line in lines:
         line = line.strip()
-        if line and not line.startswith('(') and not line.endswith(':') and len(line) > 5:
-            summary = line[:35]
+        # ラベルや戻し訳を除外し、翻訳テキスト自体を取得する
+        if line and not line.startswith('(') and not line.startswith('[') and not line.endswith(':') and len(line) > 2:
+            summary = line
             break
+    
     if not summary:
-        summary = result[:35]
+        summary = result.split('\n')[0]
+    
+    # 全文保存（表示時にst.codeを使うのでtruncatedしない方が良いが、サイドバーのスペース考慮）
+    # ユーザー要望「長押しでコピー」→ 全文が必要だが、長すぎると邪魔。
+    # ここでは「生成された文」そのものを保存する。
     
     st.session_state.history.insert(0, {"id": time.time(), "text": summary, "result": result, "pinned": False})
     if not is_pro:
@@ -267,7 +274,8 @@ def main():
                 if is_pro:
                     col1, col2 = st.columns([6, 1])
                     with col1:
-                        st.markdown(f'<div class="{css}">{h["text"]}...</div>', unsafe_allow_html=True)
+                        # 生成文をcodeブロックで表示（コピーボタン付き）
+                        st.code(h["text"], language=None)
                     with col2:
                         if is_pinned:
                             if st.button("📌", key=f"u_{h['id']}", help="Unpin"):
@@ -278,7 +286,7 @@ def main():
                                 h["pinned"] = True
                                 st.rerun()
                 else:
-                    st.markdown(f'<div class="{css}">{h["text"]}...</div>', unsafe_allow_html=True)
+                    st.code(h["text"], language=None)
             
             if st.button("🗑️ Clear"):
                 st.session_state.history = [h for h in st.session_state.history if h.get("pinned")]

@@ -1,8 +1,8 @@
 """
-Jifra 🗼 - AI Smart Translator (Original Stable Edition)
-========================================================
+Jifra 🗼 - AI Smart Translator (Enhanced Edition)
+=================================================
+Features: Translation, SNS, Prompt Generation, History, Pin
 Tech: Streamlit + Google GenerativeAI (Legacy SDK)
-Features: Translation Only (No Prompt Generation Mode)
 """
 
 import streamlit as st
@@ -18,20 +18,21 @@ try:
     API_KEY = st.secrets["gemini_api_key"]
     PRO_PASSWORD = st.secrets["pro_password"]
 except KeyError:
-    st.error("❌ Streamlit Secrets 'gemini_api_key' or 'pro_password' not found.")
+    st.error("❌ Streamlit Secrets not configured.")
     st.stop()
 
 # =============================================================================
-# 2. ページ基本設定
+# 2. ページ基本設定 & Session State
 # =============================================================================
-st.set_page_config(
-    page_title="Jifra 🗼",
-    page_icon="🗼",
-    layout="centered"
-)
+st.set_page_config(page_title="Jifra 🗼", page_icon="🗼", layout="centered")
+
+if 'style' not in st.session_state: st.session_state.style = 'casual'
+if 'history' not in st.session_state: st.session_state.history = []
+if 'current_result' not in st.session_state: st.session_state.current_result = None
+if 'input_text' not in st.session_state: st.session_state.input_text = ""
 
 # =============================================================================
-# 3. カスタムデザイン (黒背景・高級感)
+# 3. カスタムデザイン (CSS)
 # =============================================================================
 st.markdown("""
 <style>
@@ -61,16 +62,35 @@ st.markdown("""
         margin-bottom: 0.2rem;
     }
     .subtitle { text-align: center; color: #8b949e !important; font-size: 1.1rem; margin-bottom: 2.5rem; }
-    .stSelectbox > div > div { background-color: #161b22 !important; border: 1px solid #30363d !important; color: #ffffff !important; }
-    div.stButton > button { width: 100%; border-radius: 10px !important; font-weight: 600 !important; border: none !important; height: 3rem; }
+    
+    /* ボタン */
+    div.stButton > button { 
+        width: 100%; border-radius: 10px !important; font-weight: 600 !important; 
+        border: none !important; height: 3rem; cursor: pointer !important;
+    }
     div.stButton > button[kind="primary"] { background: linear-gradient(135deg, #ff6b6b 0%, #ee5253 100%) !important; color: white !important; }
     div.stButton > button[kind="secondary"] { background-color: #21262d !important; color: #c9d1d9 !important; border: 1px solid #30363d !important; }
-    .stTextArea textarea { background-color: #0d1117 !important; border: 2px solid #30363d !important; border-radius: 12px !important; color: #ffffff !important; font-size: 1.1rem !important; }
+    div.stButton > button:disabled { opacity: 0.2 !important; cursor: not-allowed !important; }
     
-    .result-card { background-color: #161b22; border: 1px solid #30363d; border-left: 5px solid #ff6b6b; border-radius: 12px; padding: 1.2rem; margin-top: 1rem; }
-    .result-header { color: #ff6b6b !important; font-size: 0.75rem; font-weight: 700; margin-bottom: 0.4rem; text-transform: uppercase; }
-    .result-text { color: #e6edf3 !important; font-size: 1.05rem; line-height: 1.5; white-space: pre-wrap; }
-    .pattern-label { color: #8b949e !important; font-size: 0.8rem; margin-top: 0.8rem; border-top: 1px solid #30363d; padding-top: 0.5rem; }
+    /* 入力欄のみテキストカーソル */
+    .stTextArea textarea { 
+        background-color: #0d1117 !important; border: 2px solid #30363d !important; 
+        border-radius: 12px !important; color: #ffffff !important; font-size: 1.1rem !important;
+        cursor: text !important;
+    }
+    .stSelectbox > div > div { background-color: #161b22 !important; border: 1px solid #30363d !important; color: #ffffff !important; }
+    
+    /* コピー用コードブロック */
+    .stCode { border-radius: 10px !important; border: 1px solid #30363d !important; }
+    code { background-color: #161b22 !important; color: #e6edf3 !important; }
+    
+    /* 履歴アイテム */
+    .history-item {
+        padding: 0.5rem; background: #0d1117; border: 1px solid #30363d;
+        border-radius: 6px; margin-bottom: 0.4rem; font-size: 0.85rem; color: #8b949e;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .pinned { border-left: 3px solid #f1c40f !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -78,26 +98,12 @@ st.markdown("""
 # 4. モデル初期化
 # =============================================================================
 @st.cache_resource
-def init_stable_model():
+def init_model():
     try:
         genai.configure(api_key=API_KEY)
-        
-        available = []
-        try:
-            for m in genai.list_models():
-                if 'generateContent' in m.supported_generation_methods:
-                    available.append(m.name)
-        except:
-            pass
-
+        available = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
         priority = ["models/gemini-1.5-flash", "models/gemini-pro", "models/gemini-1.0-pro"]
-        target = None
-        for p in priority:
-            if p in available:
-                target = p
-                break
-        if not target:
-            target = available[0] if available else "models/gemini-1.5-flash"
+        target = next((p for p in priority if p in available), available[0] if available else "models/gemini-1.5-flash")
         return genai.GenerativeModel(target), target
     except Exception as e:
         return None, str(e)
@@ -109,89 +115,144 @@ def call_api(model, prompt):
             response = model.generate_content(prompt)
             return response.text, None
         except Exception as e:
-            err = str(e)
-            if "429" in err or "ResourceExhausted" in err:
-                if i < max_retries - 1:
-                    time.sleep((2 ** i) + random.random())
-                    continue
-            return None, err
+            if "429" in str(e) and i < max_retries - 1:
+                time.sleep((2 ** i) + random.random())
+                continue
+            return None, str(e)
     return None, "Error"
 
 def simple_detect(text):
     if re.search(r'[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]', text): return 'ja'
-    if re.search(r'[àâäéèêëïîôùûüçœæ]', text): return 'fr'
     return 'en'
 
 # =============================================================================
-# 5. メインUI
+# 5. 履歴管理
+# =============================================================================
+def add_history(input_text, result, is_pro):
+    st.session_state.history.insert(0, {
+        "id": time.time(),
+        "input": input_text[:30],
+        "result": result,
+        "pinned": False
+    })
+    # 制限適用
+    if not is_pro:
+        st.session_state.history = st.session_state.history[:1]
+    else:
+        pinned = [h for h in st.session_state.history if h.get("pinned")]
+        unpinned = [h for h in st.session_state.history if not h.get("pinned")]
+        st.session_state.history = (pinned + unpinned)[:20]
+
+# =============================================================================
+# 6. メインUI
 # =============================================================================
 def main():
-    if 'style' not in st.session_state: st.session_state.style = 'casual'
-    
-    model, model_name = init_stable_model()
+    model, model_name = init_model()
 
+    # --- Sidebar ---
     with st.sidebar:
         st.header("⚙️ Settings")
-        p_input = st.text_input("🔑 PRO Password", type="password")
-        is_pro = (p_input == PRO_PASSWORD)
-        if is_pro: st.success("✨ PRO Activated")
+        pwd = st.text_input("🔑 PRO Password", type="password")
+        is_pro = (pwd == PRO_PASSWORD)
+        if is_pro: st.success("✨ PRO Active")
+        
         st.divider()
-        st.caption(f"Connected: {model_name}")
+        st.subheader("📜 History")
+        if not st.session_state.history:
+            st.caption("No history.")
+        else:
+            pinned_count = sum(1 for h in st.session_state.history if h.get("pinned"))
+            for h in st.session_state.history:
+                css_class = "history-item pinned" if h.get("pinned") else "history-item"
+                st.markdown(f'<div class="{css_class}">{h["input"]}...</div>', unsafe_allow_html=True)
+                if is_pro:
+                    col1, col2 = st.columns([3, 1])
+                    with col2:
+                        if h.get("pinned"):
+                            if st.button("📌", key=f"unpin_{h['id']}", help="Unpin"):
+                                h["pinned"] = False
+                                st.rerun()
+                        else:
+                            if pinned_count < 5:
+                                if st.button("📍", key=f"pin_{h['id']}", help="Pin"):
+                                    h["pinned"] = True
+                                    st.rerun()
+            if st.button("🗑️ Clear History"):
+                st.session_state.history = [h for h in st.session_state.history if h.get("pinned")]
+                st.rerun()
 
+    # --- Header ---
     st.markdown('<h1 class="main-title">Jifra 🗼</h1>', unsafe_allow_html=True)
     st.markdown('<p class="subtitle">Premium AI Smart Translator</p>', unsafe_allow_html=True)
 
-    # スタイル選択ボタン (3つのみ: Casual, Formal, SNS)
-    c1, c2, c3 = st.columns(3)
+    # --- Mode Selection (4 buttons) ---
+    c1, c2, c3, c4 = st.columns(4)
     def set_s(s): st.session_state.style = s
     with c1: st.button("💬 Casual", on_click=set_s, args=('casual',), type="primary" if st.session_state.style=='casual' else "secondary", use_container_width=True)
     with c2: st.button("👔 Formal", on_click=set_s, args=('formal',), type="primary" if st.session_state.style=='formal' else "secondary", use_container_width=True)
-    with c3: st.button("📱 SNS [PRO]", on_click=set_s, args=('sns',), type="primary" if st.session_state.style=='sns' else "secondary", use_container_width=True, disabled=not is_pro)
+    with c3: st.button("📱 SNS", on_click=set_s, args=('sns',), type="primary" if st.session_state.style=='sns' else "secondary", use_container_width=True, disabled=not is_pro)
+    with c4: st.button("🎨 Prompt", on_click=set_s, args=('prompt',), type="primary" if st.session_state.style=='prompt' else "secondary", use_container_width=True, disabled=not is_pro)
 
     st.write("")
     
-    # 言語選択
-    opts = {"auto": "🔄 自動検知 / Auto Detect", "ja_fr": "🇯🇵 日 ➡ 🇫🇷 仏", "fr_ja": "🇫🇷 仏 ➡ 🇯🇵 日"}
-    if is_pro: opts.update({"ja_en": "🇯🇵 日 ➡ 🇺🇸 英", "en_ja": "🇺🇸 英 ➡ 🇯🇵 日"})
-    sel_mode = st.selectbox("Dir", options=list(opts.keys()), format_func=lambda x: opts[x], label_visibility="collapsed")
-    
-    input_text = st.text_area("Input", height=180, placeholder="テキストを入力...", label_visibility="collapsed")
+    # --- Language Selection (Translation modes only) ---
+    if st.session_state.style not in ['sns', 'prompt']:
+        opts = {"auto": "🔄 Auto", "ja_fr": "🇯🇵➡🇫🇷", "fr_ja": "🇫🇷➡🇯🇵"}
+        if is_pro: opts.update({"ja_en": "🇯🇵➡🇺🇸", "en_ja": "🇺🇸➡🇯🇵"})
+        sel_mode = st.selectbox("Dir", options=list(opts.keys()), format_func=lambda x: opts[x], label_visibility="collapsed")
+    else:
+        sel_mode = st.session_state.style
 
-    if st.button("翻訳する / Translate", type="primary", use_container_width=True):
+    # --- Input ---
+    input_text = st.text_area("Input", value=st.session_state.input_text, height=160, placeholder="テキストを入力...", label_visibility="collapsed")
+
+    # --- Action Buttons ---
+    col_run, col_clear = st.columns([5, 1])
+    with col_run:
+        run_btn = st.button("翻訳 / Translate", type="primary", use_container_width=True)
+    with col_clear:
+        if st.button("🗑️", use_container_width=True, help="Clear"):
+            st.session_state.input_text = ""
+            st.session_state.current_result = None
+            st.rerun()
+
+    # --- Execution ---
+    if run_btn:
         if not input_text.strip(): return
-        if not is_pro and sel_mode == "auto" and simple_detect(input_text) == 'en':
-            st.error("🔒 PRO機能です。")
-            return
+        
+        with st.spinner("Processing..."):
+            if st.session_state.style == "prompt":
+                prompt = f"""キーワードから3種類の短い画像生成プロンプト（英語）を作成してください。
+各プロンプトの下に日本語訳を必ず添えてください。
 
-        with st.spinner("AI処理中..."):
-            if st.session_state.style == "sns":
-                prompt = f"""以下のテキストを元に、日・英・仏の3言語でSNS投稿を作成してください。
-- 各言語に絵文字とハッシュタグを入れる
-- 本文とハッシュタグの間に空行を入れる
-- 説明は不要
+[MJ] 短いプロンプト
+(日本語訳)
 
-🇯🇵 日本語:
-[本文]
+[SD] 短いプロンプト
+(日本語訳)
 
-#タグ
+[SYS] 短いプロンプト
+(日本語訳)
 
-🇺🇸 English:
-[Body]
+キーワード: {input_text}"""
+            elif st.session_state.style == "sns":
+                prompt = f"""以下のテキストを日・英・仏の3言語に翻訳してSNS投稿形式にしてください。
+【重要】入力にない事実やエピソードを創作しないでください。翻訳・推敲のみ行ってください。
 
+🇯🇵 [日本語訳]
+#ハッシュタグ
+
+🇺🇸 [English]
 #Hashtags
 
-🇫🇷 Français:
-[Corps]
-
+🇫🇷 [Français]
 #Hashtags
 
 入力: {input_text}"""
             else:
                 tone = "カジュアル" if st.session_state.style == 'casual' else "フォーマル"
                 prompt = f"""プロの翻訳者として、{tone}なトーンで翻訳してください。
-- 2つのパターンを提示
-- 各パターンに戻し訳を添える
-- 説明は不要
+2つのパターンを提示し、各パターンに戻し訳を添えてください。説明は不要です。
 
 パターン1: [翻訳]
 戻し訳1: [日本語]
@@ -203,30 +264,18 @@ def main():
             
             res, err = call_api(model, prompt)
         
-        if err: st.error(f"❌ {err}")
+        if err:
+            st.error(f"❌ {err}")
         else:
-            if st.session_state.style == "sns":
-                st.markdown(f'<div class="result-card"><div class="result-header">🌍 SNS Collection</div><div class="result-text">{res}</div></div>', unsafe_allow_html=True)
-            else:
-                lines = res.strip().split('\n')
-                p1_t, p1_b, p2_t, p2_b = "", "", "", ""
-                curr = None
-                for line in lines:
-                    if "パターン1" in line: curr = "p1_t"; p1_t = line.split(":", 1)[-1].strip()
-                    elif "戻し訳1" in line: curr = "p1_b"; p1_b = line.split(":", 1)[-1].strip()
-                    elif "パターン2" in line: curr = "p2_t"; p2_t = line.split(":", 1)[-1].strip()
-                    elif "戻し訳2" in line: curr = "p2_b"; p2_b = line.split(":", 1)[-1].strip()
-                    elif curr == "p1_t" and line.strip(): p1_t += "\n" + line
-                    elif curr == "p1_b" and line.strip(): p1_b += "\n" + line
-                    elif curr == "p2_t" and line.strip(): p2_t += "\n" + line
-                    elif curr == "p2_b" and line.strip(): p2_b += "\n" + line
+            st.session_state.current_result = res
+            st.session_state.input_text = input_text
+            add_history(input_text, res, is_pro)
+            st.rerun()
 
-                col_a, col_b = st.columns(2)
-                with col_a:
-                    st.markdown(f'<div class="result-card"><div class="result-header">💡 Pattern 1</div><div class="result-text">{p1_t if p1_t else res}</div><div class="pattern-label">🔄 Back Translation</div><div class="result-text" style="font-size:0.9rem; color:#8b949e !important;">{p1_b}</div></div>', unsafe_allow_html=True)
-                with col_b:
-                    if p2_t:
-                        st.markdown(f'<div class="result-card"><div class="result-header">💡 Pattern 2</div><div class="result-text">{p2_t}</div><div class="pattern-label">🔄 Back Translation</div><div class="result-text" style="font-size:0.9rem; color:#8b949e !important;">{p2_b}</div></div>', unsafe_allow_html=True)
+    # --- Result Display (One-tap Copy) ---
+    if st.session_state.current_result:
+        st.divider()
+        st.code(st.session_state.current_result, language="text")
 
 if __name__ == "__main__":
     main()

@@ -1,7 +1,7 @@
 """
-Jifra 🗼 - AI Smart Translator (Enhanced Edition v7)
+Jifra 🗼 - AI Smart Translator (Enhanced Edition v8)
 ====================================================
-Features: Translation, SNS, Prompt Generation, History, Pin
+Features: Translation, SNS, Prompt Generation (Star Rating System), History, Pin
 Tech: Streamlit + Google GenerativeAI (Legacy SDK)
 """
 
@@ -27,6 +27,7 @@ except KeyError:
 st.set_page_config(page_title="Jifra 🗼", page_icon="🗼", layout="centered")
 
 if 'style' not in st.session_state: st.session_state.style = 'casual'
+if 'prompt_level' not in st.session_state: st.session_state.prompt_level = 1
 if 'history' not in st.session_state: st.session_state.history = []
 if 'current_result' not in st.session_state: st.session_state.current_result = None
 if 'input_text' not in st.session_state: st.session_state.input_text = ""
@@ -90,10 +91,11 @@ st.markdown("""
         border: 2px solid #ff6b6b !important;
     }
     div.stButton > button:disabled { 
-        opacity: 0.3 !important; 
+        opacity: 0.25 !important; 
         cursor: not-allowed !important; 
         border-color: #30363d !important;
         color: #484f58 !important;
+        background-color: #161b22 !important;
     }
     
     .stTextArea textarea { 
@@ -112,7 +114,6 @@ st.markdown("""
     
     .stSelectbox > div > div { background-color: #161b22 !important; border: 1px solid #30363d !important; color: #ffffff !important; }
     
-    /* コードボックス: スクロールなし */
     .stCode { 
         border-radius: 10px !important; 
         border: 1px solid #30363d !important; 
@@ -150,11 +151,18 @@ st.markdown("""
     }
     .history-pinned { border-left: 3px solid #f1c40f !important; }
     
-    /* コピーボタン強調 */
     .stCode button {
         background-color: #ff6b6b !important;
         color: white !important;
         border: none !important;
+    }
+    
+    /* 星評価ボタン */
+    .star-desc {
+        font-size: 0.75rem;
+        color: #8b949e !important;
+        text-align: center;
+        margin-top: 0.3rem;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -243,16 +251,35 @@ def main():
     else:
         st.markdown('<div class="free-badge">Free Plan</div>', unsafe_allow_html=True)
 
+    # モード選択
     c1, c2, c3, c4 = st.columns(4)
     def set_s(s): st.session_state.style = s
     with c1: st.button("👕 Casual", on_click=set_s, args=('casual',), type="primary" if st.session_state.style=='casual' else "secondary", use_container_width=True)
     with c2: st.button("👔 Formal", on_click=set_s, args=('formal',), type="primary" if st.session_state.style=='formal' else "secondary", use_container_width=True)
     with c3: st.button("📱 SNS", on_click=set_s, args=('sns',), type="primary" if st.session_state.style=='sns' else "secondary", use_container_width=True, disabled=not is_pro)
-    with c4: st.button("🎨 Prompt", on_click=set_s, args=('prompt',), type="primary" if st.session_state.style=='prompt' else "secondary", use_container_width=True, disabled=not is_pro)
+    with c4: st.button("🎨 Prompt", on_click=set_s, args=('prompt',), type="primary" if st.session_state.style=='prompt' else "secondary", use_container_width=True)
 
     st.write("")
     
-    if st.session_state.style not in ['sns', 'prompt']:
+    # プロンプトモード: 星評価システム
+    if st.session_state.style == 'prompt':
+        st.markdown("**Select Prompt Level:**")
+        p1, p2, p3 = st.columns(3)
+        
+        def set_level(lv): st.session_state.prompt_level = lv
+        
+        with p1:
+            st.button("★", on_click=set_level, args=(1,), type="primary" if st.session_state.prompt_level==1 else "secondary", use_container_width=True)
+            st.markdown('<p class="star-desc">Standard Chat<br>(Gemini, ChatGPT)</p>', unsafe_allow_html=True)
+        with p2:
+            st.button("★★", on_click=set_level, args=(2,), type="primary" if st.session_state.prompt_level==2 else "secondary", use_container_width=True, disabled=not is_pro)
+            st.markdown('<p class="star-desc">System Role<br>(Nano Banana)</p>', unsafe_allow_html=True)
+        with p3:
+            st.button("★★★", on_click=set_level, args=(3,), type="primary" if st.session_state.prompt_level==3 else "secondary", use_container_width=True, disabled=not is_pro)
+            st.markdown('<p class="star-desc">Visual Prompt<br>(SD, Midjourney)</p>', unsafe_allow_html=True)
+        
+        sel_lang = None
+    elif st.session_state.style not in ['sns']:
         opts = {"🇯🇵 Japanese": "ja", "🇫🇷 French": "fr"}
         if is_pro: opts["🇺🇸 English"] = "en"
         target_lang = st.selectbox("Output", options=list(opts.keys()), label_visibility="collapsed")
@@ -273,27 +300,68 @@ def main():
 
     if run_btn and input_text.strip():
         with st.spinner("⏳ Generating..."):
-            STRICT = "OUTPUT ONLY THE RESULT. NO INTRO. NO CHAT. NO LABELS LIKE '日本語訳:' etc."
+            STRICT = "OUTPUT ONLY THE RESULT. NO INTRO. NO CHAT. NO LABELS."
             
             if st.session_state.style == "prompt":
-                # 一般的なAI名に変更
-                prompt = f"""{STRICT}
-Create 3 short AI prompts (English) from the keyword.
-Add Japanese translation in parentheses after each. Do NOT write "日本語訳:" etc.
+                level = st.session_state.prompt_level
+                
+                if level == 1:
+                    # ★ Standard Chat
+                    prompt = f"""{STRICT}
+Create 3 optimized chat prompts from the keyword for daily conversation with AI assistants.
+Target: Gemini, ChatGPT, Copilot
+Add Japanese translation in parentheses after each.
 
 Gemini:
-[prompt]
-(translation)
-
-Copilot:
-[prompt]
-(translation)
+[optimized prompt]
+(日本語)
 
 ChatGPT:
-[prompt]
-(translation)
+[optimized prompt]
+(日本語)
+
+Copilot:
+[optimized prompt]
+(日本語)
 
 Keyword: {input_text}"""
+                elif level == 2:
+                    # ★★ System Role
+                    prompt = f"""{STRICT}
+Create 2 advanced system role prompts that give AI a specific persona or constraints.
+Target: Nano Banana, Custom GPT
+Add Japanese translation in parentheses after each.
+
+Nano Banana:
+[system role prompt with persona/constraints]
+(日本語)
+
+Custom GPT:
+[system role prompt with persona/constraints]
+(日本語)
+
+Keyword: {input_text}"""
+                else:
+                    # ★★★ Visual Prompt
+                    prompt = f"""{STRICT}
+Create 3 powerful image generation prompts with detailed style, lighting, and composition.
+Target: Stable Diffusion, Midjourney, Adobe Firefly
+Add Japanese translation in parentheses after each.
+
+Stable Diffusion:
+[detailed visual prompt]
+(日本語)
+
+Midjourney:
+[detailed visual prompt]
+(日本語)
+
+Adobe Firefly:
+[detailed visual prompt]
+(日本語)
+
+Keyword: {input_text}"""
+                    
             elif st.session_state.style == "sns":
                 prompt = f"""{STRICT}
 Translate to JP/EN/FR for SNS. No imaginary content. Add emoji and hashtags.
@@ -315,7 +383,6 @@ Input: {input_text}"""
                 prompt = f"""{STRICT}
 Translate to {lang_name} in {tone} tone. 
 Give 2 variations. Add Japanese back-translation in parentheses after each.
-Do NOT write labels like "Translation:" or "日本語訳:".
 
 [translation 1]
 (japanese)
@@ -340,7 +407,6 @@ Input: {input_text}"""
         st.divider()
         res_data = st.session_state.current_result
         raw = res_data["raw"]
-        style = res_data["style"]
         
         lines = raw.strip().split('\n')
         blocks = []
@@ -350,7 +416,6 @@ Input: {input_text}"""
             line = line.strip()
             if not line: continue
             
-            # 言語ラベル検出 [JP] [EN] [FR]
             if line.startswith('[JP]') or line.startswith('[EN]') or line.startswith('[FR]'):
                 if current_block["text"]:
                     blocks.append(current_block)
@@ -360,14 +425,12 @@ Input: {input_text}"""
                 current_block["text"] = line[4:].strip()
                 continue
             
-            # 戻し訳 (括弧)
             if line.startswith('(') and line.endswith(')'):
                 current_block["back"] = line
                 if current_block["text"]:
                     blocks.append(current_block)
                     current_block = {"text": "", "back": "", "label": ""}
-            # AI名ラベル (Gemini: 等)
-            elif line.endswith(':') and len(line) < 20:
+            elif line.endswith(':') and len(line) < 25:
                 if current_block["text"]:
                     blocks.append(current_block)
                 current_block = {"text": "", "back": "", "label": line[:-1]}

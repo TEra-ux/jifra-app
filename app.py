@@ -1,5 +1,5 @@
 """
-Jifra 🗼 - AI Smart Translator (Enhanced Edition v3)
+Jifra 🗼 - AI Smart Translator (Enhanced Edition v4)
 ====================================================
 Features: Translation, SNS, Prompt Generation, History, Pin
 Tech: Streamlit + Google GenerativeAI (Legacy SDK)
@@ -61,16 +61,42 @@ st.markdown("""
         -webkit-background-clip: text; -webkit-text-fill-color: transparent;
         margin-bottom: 0.2rem;
     }
-    .subtitle { text-align: center; color: #8b949e !important; font-size: 1.1rem; margin-bottom: 2.5rem; }
+    .subtitle { text-align: center; color: #8b949e !important; font-size: 1.1rem; margin-bottom: 2rem; }
     
-    /* ボタン */
+    /* PRO表示バッジ */
+    .pro-badge {
+        text-align: center; padding: 0.5rem; margin-bottom: 1rem;
+        background: linear-gradient(135deg, #ff6b6b 0%, #ff8e53 100%);
+        border-radius: 8px; font-weight: 600; color: white !important;
+    }
+    .free-badge {
+        text-align: center; padding: 0.5rem; margin-bottom: 1rem;
+        background: #21262d; border: 1px solid #30363d;
+        border-radius: 8px; font-weight: 600; color: #8b949e !important;
+    }
+    
+    /* ボタン: 選択時=塗り、非選択=赤枠のみ */
     div.stButton > button { 
         width: 100%; border-radius: 10px !important; font-weight: 600 !important; 
-        border: none !important; height: 3rem; cursor: pointer !important;
+        height: 3.5rem; cursor: pointer !important;
+        transition: all 0.2s ease !important;
     }
-    div.stButton > button[kind="primary"] { background: linear-gradient(135deg, #ff6b6b 0%, #ee5253 100%) !important; color: white !important; }
-    div.stButton > button[kind="secondary"] { background-color: #21262d !important; color: #c9d1d9 !important; border: 1px solid #30363d !important; }
-    div.stButton > button:disabled { opacity: 0.2 !important; cursor: not-allowed !important; }
+    div.stButton > button[kind="primary"] { 
+        background: linear-gradient(135deg, #ff6b6b 0%, #ee5253 100%) !important; 
+        color: white !important; 
+        border: none !important;
+    }
+    div.stButton > button[kind="secondary"] { 
+        background-color: transparent !important; 
+        color: #ff6b6b !important; 
+        border: 2px solid #ff6b6b !important;
+    }
+    div.stButton > button:disabled { 
+        opacity: 0.3 !important; 
+        cursor: not-allowed !important; 
+        border-color: #30363d !important;
+        color: #484f58 !important;
+    }
     
     /* 入力欄 */
     .stTextArea textarea { 
@@ -89,17 +115,20 @@ st.markdown("""
     
     .stSelectbox > div > div { background-color: #161b22 !important; border: 1px solid #30363d !important; color: #ffffff !important; cursor: pointer !important; }
     
-    /* 結果表示: ダークテーマに統一 */
-    .result-box {
-        background-color: #161b22 !important;
-        border: 1px solid #30363d !important;
-        border-radius: 12px !important;
-        padding: 1rem !important;
-        color: #e6edf3 !important;
-        font-size: 1rem !important;
-        line-height: 1.6 !important;
-        white-space: pre-wrap !important;
+    /* 結果表示: コードブロックをダークに */
+    .stCode { 
+        border-radius: 12px !important; 
+        border: 1px solid #30363d !important; 
         margin-top: 1rem !important;
+    }
+    .stCode pre { 
+        background-color: #161b22 !important; 
+    }
+    .stCode code { 
+        background-color: #161b22 !important; 
+        color: #e6edf3 !important; 
+        font-size: 1rem !important;
+        font-family: inherit !important;
     }
     
     /* 履歴 */
@@ -109,6 +138,9 @@ st.markdown("""
         overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     .pinned { border-left: 3px solid #f1c40f !important; }
+    
+    /* スピナーの色 */
+    .stSpinner > div { border-top-color: #ff6b6b !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -185,34 +217,38 @@ def main():
 
     st.markdown('<h1 class="main-title">Jifra 🗼</h1>', unsafe_allow_html=True)
     st.markdown('<p class="subtitle">Smart Translator</p>', unsafe_allow_html=True)
+    
+    # PRO/Free バッジ表示 (常時)
+    if is_pro:
+        st.markdown('<div class="pro-badge">✨ PRO Plan Active</div>', unsafe_allow_html=True)
+    else:
+        st.markdown('<div class="free-badge">Free Plan</div>', unsafe_allow_html=True)
 
-    # モード選択 (英語表記)
+    # モード選択 (絵文字+英語)
     c1, c2, c3, c4 = st.columns(4)
     def set_s(s): st.session_state.style = s
-    with c1: st.button("Casual", on_click=set_s, args=('casual',), type="primary" if st.session_state.style=='casual' else "secondary", use_container_width=True)
-    with c2: st.button("Formal", on_click=set_s, args=('formal',), type="primary" if st.session_state.style=='formal' else "secondary", use_container_width=True)
-    with c3: st.button("SNS", on_click=set_s, args=('sns',), type="primary" if st.session_state.style=='sns' else "secondary", use_container_width=True, disabled=not is_pro)
-    with c4: st.button("Prompt", on_click=set_s, args=('prompt',), type="primary" if st.session_state.style=='prompt' else "secondary", use_container_width=True, disabled=not is_pro)
+    with c1: st.button("👕 Casual", on_click=set_s, args=('casual',), type="primary" if st.session_state.style=='casual' else "secondary", use_container_width=True)
+    with c2: st.button("👔 Formal", on_click=set_s, args=('formal',), type="primary" if st.session_state.style=='formal' else "secondary", use_container_width=True)
+    with c3: st.button("📱 SNS", on_click=set_s, args=('sns',), type="primary" if st.session_state.style=='sns' else "secondary", use_container_width=True, disabled=not is_pro)
+    with c4: st.button("🎨 Prompt", on_click=set_s, args=('prompt',), type="primary" if st.session_state.style=='prompt' else "secondary", use_container_width=True, disabled=not is_pro)
 
     st.write("")
     
-    # 出力言語選択 (入力は自動検知)
+    # 出力言語選択
     if st.session_state.style not in ['sns', 'prompt']:
-        # 全ての出力言語を選択可能に
-        opts = {"🇯🇵 Japanese": "ja", "🇫🇷 French": "fr", "🇺🇸 English": "en"}
-        if not is_pro:
-            opts = {"🇯🇵 Japanese": "ja", "🇫🇷 French": "fr"}  # Freeは英語出力不可
-        target_lang = st.selectbox("Output Language", options=list(opts.keys()), label_visibility="collapsed")
+        opts = {"🇯🇵 Japanese": "ja", "🇫🇷 French": "fr"}
+        if is_pro: opts["🇺🇸 English"] = "en"
+        target_lang = st.selectbox("Output", options=list(opts.keys()), label_visibility="collapsed")
         sel_lang = opts[target_lang]
     else:
         sel_lang = None
 
-    input_text = st.text_area("", value=st.session_state.input_text, height=160, placeholder="Input text (auto-detect language)...", label_visibility="collapsed")
+    input_text = st.text_area("", value=st.session_state.input_text, height=160, placeholder="Input text (auto-detect)...", label_visibility="collapsed")
 
     # アクションボタン
     col_run, col_clear = st.columns([5, 1])
     with col_run:
-        run_btn = st.button("✈️", type="primary", use_container_width=True)
+        run_btn = st.button("✈️ Translate", type="primary", use_container_width=True)
     with col_clear:
         if st.button("🗑️", use_container_width=True):
             st.session_state.input_text = ""
@@ -222,13 +258,12 @@ def main():
     if run_btn:
         if not input_text.strip(): return
         
-        with st.spinner("..."):
-            STRICT = "OUTPUT ONLY THE TRANSLATION/RESULT. NO CHAT. NO LABELS. NO EXPLANATION. START DIRECTLY."
+        with st.spinner("⏳ Generating..."):
+            STRICT = "OUTPUT ONLY THE RESULT. NO INTRO. NO LABELS. NO EXPLANATION."
             
             if st.session_state.style == "prompt":
                 prompt = f"""{STRICT}
-Create 3 short image generation prompts (English) from the keyword.
-Add Japanese translation after each.
+Create 3 short prompts (English) from the keyword. Add Japanese translation after each.
 
 MJ: [prompt]
 [日本語]
@@ -244,13 +279,13 @@ Keyword: {input_text}"""
                 prompt = f"""{STRICT}
 Translate to JP/EN/FR for SNS. No imaginary content. Add emoji and hashtags.
 
-🇯🇵 [translation]
+🇯🇵 [text]
 #tags
 
-🇺🇸 [translation]
+🇺🇸 [text]
 #tags
 
-🇫🇷 [translation]
+🇫🇷 [text]
 #tags
 
 Input: {input_text}"""
@@ -259,12 +294,12 @@ Input: {input_text}"""
                 lang_name = {"ja": "Japanese", "fr": "French", "en": "English"}[sel_lang]
                 prompt = f"""{STRICT}
 Translate to {lang_name} in {tone} tone. Give 2 variations with Japanese back-translation.
-Do NOT write labels like "Translation 1:" or "(Back-translation)". Just output the text directly.
+Do NOT use labels. Output directly.
 
-[first translation]
+[translation 1]
 [日本語]
 
-[second translation]
+[translation 2]
 [日本語]
 
 Input: {input_text}"""
@@ -279,13 +314,10 @@ Input: {input_text}"""
             add_history(input_text, res, is_pro)
             st.rerun()
 
-    # 結果表示: ダークテーマのボックス
+    # 結果表示: 直接コードブロック（コピー可能）
     if st.session_state.current_result:
         st.divider()
-        st.markdown(f'<div class="result-box">{st.session_state.current_result}</div>', unsafe_allow_html=True)
-        # コピー用のコードブロックも併設（タップでコピー）
-        with st.expander("📋 Copy"):
-            st.code(st.session_state.current_result, language="text")
+        st.code(st.session_state.current_result, language="text")
 
 if __name__ == "__main__":
     main()

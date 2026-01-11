@@ -1,5 +1,5 @@
 """
-Jifra 🗼 - AI Smart Translator (Enhanced Edition v2)
+Jifra 🗼 - AI Smart Translator (Enhanced Edition v3)
 ====================================================
 Features: Translation, SNS, Prompt Generation, History, Pin
 Tech: Streamlit + Google GenerativeAI (Legacy SDK)
@@ -63,7 +63,7 @@ st.markdown("""
     }
     .subtitle { text-align: center; color: #8b949e !important; font-size: 1.1rem; margin-bottom: 2.5rem; }
     
-    /* ボタン: 記号中心 */
+    /* ボタン */
     div.stButton > button { 
         width: 100%; border-radius: 10px !important; font-weight: 600 !important; 
         border: none !important; height: 3rem; cursor: pointer !important;
@@ -72,7 +72,7 @@ st.markdown("""
     div.stButton > button[kind="secondary"] { background-color: #21262d !important; color: #c9d1d9 !important; border: 1px solid #30363d !important; }
     div.stButton > button:disabled { opacity: 0.2 !important; cursor: not-allowed !important; }
     
-    /* 入力欄: クリック時にカーソルが点滅するテキストカーソル */
+    /* 入力欄 */
     .stTextArea textarea { 
         background-color: #0d1117 !important; 
         border: 2px solid #30363d !important; 
@@ -80,7 +80,7 @@ st.markdown("""
         color: #ffffff !important; 
         font-size: 1.1rem !important;
         cursor: text !important;
-        caret-color: #ff6b6b !important; /* カーソル色をアクセントカラーに */
+        caret-color: #ff6b6b !important;
     }
     .stTextArea textarea:focus {
         border-color: #ff6b6b !important;
@@ -89,9 +89,18 @@ st.markdown("""
     
     .stSelectbox > div > div { background-color: #161b22 !important; border: 1px solid #30363d !important; color: #ffffff !important; cursor: pointer !important; }
     
-    /* コピー用コードブロック: スマートでクリーン */
-    .stCode { border-radius: 10px !important; border: 1px solid #30363d !important; }
-    code { background-color: #161b22 !important; color: #e6edf3 !important; font-size: 1rem !important; }
+    /* 結果表示: ダークテーマに統一 */
+    .result-box {
+        background-color: #161b22 !important;
+        border: 1px solid #30363d !important;
+        border-radius: 12px !important;
+        padding: 1rem !important;
+        color: #e6edf3 !important;
+        font-size: 1rem !important;
+        line-height: 1.6 !important;
+        white-space: pre-wrap !important;
+        margin-top: 1rem !important;
+    }
     
     /* 履歴 */
     .history-item {
@@ -177,32 +186,35 @@ def main():
     st.markdown('<h1 class="main-title">Jifra 🗼</h1>', unsafe_allow_html=True)
     st.markdown('<p class="subtitle">Smart Translator</p>', unsafe_allow_html=True)
 
-    # モード選択 (記号中心)
+    # モード選択 (英語表記)
     c1, c2, c3, c4 = st.columns(4)
     def set_s(s): st.session_state.style = s
-    with c1: st.button("💬", on_click=set_s, args=('casual',), type="primary" if st.session_state.style=='casual' else "secondary", use_container_width=True, help="Casual")
-    with c2: st.button("👔", on_click=set_s, args=('formal',), type="primary" if st.session_state.style=='formal' else "secondary", use_container_width=True, help="Formal")
-    with c3: st.button("📱", on_click=set_s, args=('sns',), type="primary" if st.session_state.style=='sns' else "secondary", use_container_width=True, disabled=not is_pro, help="SNS [PRO]")
-    with c4: st.button("🎨", on_click=set_s, args=('prompt',), type="primary" if st.session_state.style=='prompt' else "secondary", use_container_width=True, disabled=not is_pro, help="Prompt [PRO]")
+    with c1: st.button("Casual", on_click=set_s, args=('casual',), type="primary" if st.session_state.style=='casual' else "secondary", use_container_width=True)
+    with c2: st.button("Formal", on_click=set_s, args=('formal',), type="primary" if st.session_state.style=='formal' else "secondary", use_container_width=True)
+    with c3: st.button("SNS", on_click=set_s, args=('sns',), type="primary" if st.session_state.style=='sns' else "secondary", use_container_width=True, disabled=not is_pro)
+    with c4: st.button("Prompt", on_click=set_s, args=('prompt',), type="primary" if st.session_state.style=='prompt' else "secondary", use_container_width=True, disabled=not is_pro)
 
     st.write("")
     
-    # 言語選択 (国旗のみ)
+    # 出力言語選択 (入力は自動検知)
     if st.session_state.style not in ['sns', 'prompt']:
-        opts = {"auto": "🔄", "ja_fr": "🇯🇵➡🇫🇷", "fr_ja": "🇫🇷➡🇯🇵"}
-        if is_pro: opts.update({"ja_en": "🇯🇵➡🇺🇸", "en_ja": "🇺🇸➡🇯🇵"})
-        sel_mode = st.selectbox("", options=list(opts.keys()), format_func=lambda x: opts[x], label_visibility="collapsed")
+        # 全ての出力言語を選択可能に
+        opts = {"🇯🇵 Japanese": "ja", "🇫🇷 French": "fr", "🇺🇸 English": "en"}
+        if not is_pro:
+            opts = {"🇯🇵 Japanese": "ja", "🇫🇷 French": "fr"}  # Freeは英語出力不可
+        target_lang = st.selectbox("Output Language", options=list(opts.keys()), label_visibility="collapsed")
+        sel_lang = opts[target_lang]
     else:
-        sel_mode = st.session_state.style
+        sel_lang = None
 
-    input_text = st.text_area("", value=st.session_state.input_text, height=160, placeholder="Input...", label_visibility="collapsed")
+    input_text = st.text_area("", value=st.session_state.input_text, height=160, placeholder="Input text (auto-detect language)...", label_visibility="collapsed")
 
-    # アクションボタン (紙飛行機)
+    # アクションボタン
     col_run, col_clear = st.columns([5, 1])
     with col_run:
-        run_btn = st.button("✈️", type="primary", use_container_width=True, help="Translate")
+        run_btn = st.button("✈️", type="primary", use_container_width=True)
     with col_clear:
-        if st.button("🗑️", use_container_width=True, help="Clear"):
+        if st.button("🗑️", use_container_width=True):
             st.session_state.input_text = ""
             st.session_state.current_result = None
             st.rerun()
@@ -211,49 +223,49 @@ def main():
         if not input_text.strip(): return
         
         with st.spinner("..."):
-            # ===================================================================
-            # 超厳格プロンプト: 余計な文章を完全禁止
-            # ===================================================================
-            STRICT = "OUTPUT ONLY THE RESULT. NO CHAT. NO EXPLANATION. NO GREETING. START DIRECTLY WITH THE OUTPUT."
+            STRICT = "OUTPUT ONLY THE TRANSLATION/RESULT. NO CHAT. NO LABELS. NO EXPLANATION. START DIRECTLY."
             
             if st.session_state.style == "prompt":
                 prompt = f"""{STRICT}
-キーワードから3種類の短いプロンプト（英語）を生成。各プロンプトの下に日本語訳を添える。
+Create 3 short image generation prompts (English) from the keyword.
+Add Japanese translation after each.
 
-[MJ] prompt
-(日本語)
+MJ: [prompt]
+[日本語]
 
-[SD] prompt
-(日本語)
+SD: [prompt]
+[日本語]
 
-[SYS] prompt
-(日本語)
+SYS: [prompt]
+[日本語]
 
 Keyword: {input_text}"""
             elif st.session_state.style == "sns":
                 prompt = f"""{STRICT}
-入力を日・英・仏に翻訳。創作禁止。絵文字とハッシュタグを添える。
+Translate to JP/EN/FR for SNS. No imaginary content. Add emoji and hashtags.
 
-🇯🇵 [訳]
-#タグ
+🇯🇵 [translation]
+#tags
 
-🇺🇸 [Translation]
-#Tags
+🇺🇸 [translation]
+#tags
 
-🇫🇷 [Traduction]
-#Tags
+🇫🇷 [translation]
+#tags
 
 Input: {input_text}"""
             else:
-                tone = "casual" if st.session_state.style == 'casual' else "formal"
+                tone = "casual friendly" if st.session_state.style == 'casual' else "formal polite"
+                lang_name = {"ja": "Japanese", "fr": "French", "en": "English"}[sel_lang]
                 prompt = f"""{STRICT}
-Translate into {tone} tone. Provide 2 variations. Add JP back-translation for each.
+Translate to {lang_name} in {tone} tone. Give 2 variations with Japanese back-translation.
+Do NOT write labels like "Translation 1:" or "(Back-translation)". Just output the text directly.
 
-[訳1]
-(戻し訳)
+[first translation]
+[日本語]
 
-[訳2]
-(戻し訳)
+[second translation]
+[日本語]
 
 Input: {input_text}"""
             
@@ -267,10 +279,13 @@ Input: {input_text}"""
             add_history(input_text, res, is_pro)
             st.rerun()
 
-    # 結果表示: コードブロックでワンタップコピー
+    # 結果表示: ダークテーマのボックス
     if st.session_state.current_result:
         st.divider()
-        st.code(st.session_state.current_result, language="text")
+        st.markdown(f'<div class="result-box">{st.session_state.current_result}</div>', unsafe_allow_html=True)
+        # コピー用のコードブロックも併設（タップでコピー）
+        with st.expander("📋 Copy"):
+            st.code(st.session_state.current_result, language="text")
 
 if __name__ == "__main__":
     main()
